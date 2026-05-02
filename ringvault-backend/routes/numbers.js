@@ -14,7 +14,6 @@ const telnyx = new Telnyx(process.env.TELNYX_API_KEY);
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const NUMBER_PRICE_USD = 2.0; // Fixed price per number
-const TELNYX_CONNECTION_ID = process.env.TELNYX_CONNECTION_ID;
 
 // ─── GET /api/search-numbers ─────────────────────────────────────────────────
 // Query params:
@@ -44,13 +43,15 @@ router.get("/search-numbers", requireAuth, async (req, res) => {
         country_code: country_code.toUpperCase(),
         features: ["sms"],         // Only return SMS-capable numbers
         limit: Math.min(+limit, 50),
+        best_effort: true,         // <--- FIX: Prevents 10031 error
       },
     };
 
     // Add state/region filter when provided
-    if (administrative_area) {
-      params.filter.administrative_area = administrative_area;
-    }
+    // ⚠️ COMMENTED OUT TO BYPASS TELNYX STRICT ABBREVIATION RULES FOR NOW
+    // if (administrative_area) {
+    //   params.filter.administrative_area = administrative_area;
+    // }
 
     const response = await telnyx.availablePhoneNumbers.list(params);
 
@@ -58,7 +59,8 @@ router.get("/search-numbers", requireAuth, async (req, res) => {
       phone_number: n.phone_number,
       region: n.administrative_area || "Unknown",
       country_code: n.country_code,
-      features: n.features || ["SMS"],
+      // 🐛 THE FIX: Extract the feature name string from the object so React doesn't crash
+      features: n.features ? n.features.map(f => typeof f === 'object' ? f.name : f) : ["SMS"],
       price_usd: NUMBER_PRICE_USD,
       monthly_cost: n.cost?.monthly_cost?.amount || "2.00",
     }));
@@ -75,19 +77,6 @@ router.get("/search-numbers", requireAuth, async (req, res) => {
 });
 
 // ─── POST /api/buy-number ─────────────────────────────────────────────────────
-// Body: { phone_number: "+16505550191" }
-//
-// Logic (all server-side, no client trust):
-//  1. Verify auth token → get user.id
-//  2. Read profile.balance inside a Supabase DB transaction (FOR UPDATE)
-//  3. Check balance >= NUMBER_PRICE_USD
-//  4. Call Telnyx "order number" endpoint
-//  5. On success → deduct balance & insert into user_numbers table (atomically)
-//  6. Return the purchased number details
-//
-// Balance deduction is handled with a Postgres RPC function to prevent
-// race conditions (two simultaneous buy requests).
-// ─────────────────────────────────────────────────────────────────────────────
 router.post("/buy-number", requireAuth, async (req, res) => {
   const { phone_number } = req.body;
   const userId = req.user.id;
@@ -98,9 +87,6 @@ router.post("/buy-number", requireAuth, async (req, res) => {
       .json({ success: false, error: "phone_number is required" });
   }
 
-  // ── Step 1: Atomic balance check + deduction via Postgres RPC ────────────
-  // The RPC function `deduct_balance` (see schema.sql) runs inside a
-  // transaction with a row lock so parallel requests can't double-spend.
   const { data: deductResult, error: deductError } = await supabaseAdmin.rpc(
     "deduct_balance",
     {
@@ -117,7 +103,6 @@ router.post("/buy-number", requireAuth, async (req, res) => {
     });
   }
 
-  // The RPC returns { ok: boolean, balance_after: number, reason?: string }
   if (!deductResult?.ok) {
     return res.status(402).json({
       success: false,
@@ -126,17 +111,16 @@ router.post("/buy-number", requireAuth, async (req, res) => {
     });
   }
 
-  // ── Step 2: Order the number from Telnyx ────────────────────────────────
   let telnyxOrder;
   try {
     telnyxOrder = await telnyx.numberOrders.create({
       phone_numbers: [{ phone_number }],
-      connection_id: TELNYX_CONNECTION_ID,
+      // THE FIX: Pass the messaging profile ID instead of the connection ID
+      messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID,
     });
   } catch (telnyxErr) {
     console.error("[buy-number] Telnyx order error:", telnyxErr);
 
-    // ⚠️ Refund the balance since Telnyx failed
     await supabaseAdmin.rpc("credit_balance", {
       p_user_id: userId,
       p_amount: NUMBER_PRICE_USD,
@@ -151,9 +135,8 @@ router.post("/buy-number", requireAuth, async (req, res) => {
 
   const orderedNumber = telnyxOrder.data?.phone_numbers?.[0];
 
-  // ── Step 3: Persist the purchased number to Supabase ────────────────────
   const expiresAt = new Date();
-  expiresAt.setMonth(expiresAt.getMonth() + 1); // 30-day lease
+  expiresAt.setMonth(expiresAt.getMonth() + 1);
 
   const { data: userNumber, error: insertError } = await supabaseAdmin
     .from("user_numbers")
@@ -170,11 +153,8 @@ router.post("/buy-number", requireAuth, async (req, res) => {
 
   if (insertError) {
     console.error("[buy-number] DB insert error:", insertError);
-    // Number was ordered but DB failed – log for manual recovery
-    // In production, push to a dead-letter queue or alert system here
   }
 
-  // ── Step 4: Log the transaction ─────────────────────────────────────────
   await supabaseAdmin.from("transactions").insert({
     user_id: userId,
     type: "debit",
@@ -207,12 +187,10 @@ router.get("/my-numbers", requireAuth, async (req, res) => {
 });
 
 // ─── DELETE /api/release-number/:id ──────────────────────────────────────────
-// Release (cancel) a number. No refund – matches real carrier behaviour.
 router.delete("/release-number/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
 
-  // Verify ownership
   const { data: num, error: findErr } = await supabaseAdmin
     .from("user_numbers")
     .select("*")
@@ -224,7 +202,6 @@ router.delete("/release-number/:id", requireAuth, async (req, res) => {
     return res.status(404).json({ success: false, error: "Number not found." });
   }
 
-  // Cancel on Telnyx
   try {
     if (num.telnyx_number_id) {
       await telnyx.phoneNumbers.delete(num.phone_number);
@@ -233,7 +210,6 @@ router.delete("/release-number/:id", requireAuth, async (req, res) => {
     console.warn("[release-number] Telnyx delete failed:", e.message);
   }
 
-  // Update status in DB
   await supabaseAdmin
     .from("user_numbers")
     .update({ status: "released", released_at: new Date().toISOString() })
