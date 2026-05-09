@@ -1,36 +1,50 @@
+// lib/supabase.js
 import { createClient } from "@supabase/supabase-js";
 import "dotenv/config";
 
-// Fallback logic: Checks for both standard and Next.js style naming
+/**
+ * We check every possible name variation to ensure Render picks it up.
+ * Node.js on Render is case-sensitive and does not use a local .env file.
+ */
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Log to Render console to help you debug during startup
+// 1. Log the status to your Render console so you can see if the keys are found
 if (!supabaseUrl) {
-  console.error("❌ ERROR: SUPABASE_URL is undefined. Check Render Environment variables.");
+  console.error("❌ RENDER ENV ERROR: SUPABASE_URL is missing from the Environment tab.");
 }
 
-export const supabaseAdmin = createClient(supabaseUrl || '', supabaseServiceRole || '', {
-  auth: { 
-    persistSession: false,
-    autoRefreshToken: false 
-  },
-});
+// 2. Initialize the Admin Client (used for server-side balance/logic)
+export const supabaseAdmin = createClient(
+  supabaseUrl || "", 
+  supabaseServiceRole || "", 
+  {
+    auth: { 
+      persistSession: false,
+      autoRefreshToken: false 
+    },
+  }
+);
 
-export const supabaseClient = createClient(supabaseUrl || '', supabaseAnonKey || '');
+// 3. Initialize the Public Client
+export const supabaseClient = createClient(
+  supabaseUrl || "", 
+  supabaseAnonKey || ""
+);
 
 /**
- * Helper to get user from request headers
+ * Updated getUser helper to handle both Express and Web Request objects
  */
 export async function getUser(req) {
-  // Check both standard Express headers and Web Request headers
-  const authHeader = req.headers.get ? req.headers.get("authorization") : req.headers.authorization;
-  const token = authHeader?.split(" ")[1];
+  // Check if headers is a Map (Next.js) or an Object (Express)
+  const authHeader = req.headers?.get ? req.headers.get("authorization") : req.headers?.authorization;
   
-  if (!token) return null;
+  if (!authHeader?.startsWith("Bearer ")) return null;
   
+  const token = authHeader.split(" ")[1];
   const { data: { user }, error } = await supabaseClient.auth.getUser(token);
-  if (error) return null;
+  
+  if (error || !user) return null;
   return user;
 }
