@@ -1,54 +1,35 @@
-// lib/api.ts — typed wrappers for every backend endpoint
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
+// lib/api.ts
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 async function authFetch(path: string, token: string, opts: RequestInit = {}) {
-  const res = await fetch(`${API}${path}`, {
+  const baseUrl = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const fullUrl = `${baseUrl}${cleanPath}`;
+
+  const res = await fetch(fullUrl, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      'Authorization': `Bearer ${token}`,
       ...(opts.headers || {}),
     },
-  })
-  const data = await res.json()
-  if (!data.success) throw new Error(data.error || 'Request failed')
-  return data
+  });
+
+  const contentType = res.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    throw new Error("Backend did not return JSON. Check Render logs.");
+  }
+
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Request failed');
+  return data;
 }
 
-export async function searchNumbers(
-  token: string,
-  params: { country_code: string; administrative_area?: string; limit?: number }
-) {
-  const qs = new URLSearchParams(params as any).toString()
-  return authFetch(`/api/search-numbers?${qs}`, token)
-}
+export const searchNumbers = (token: string, params: any) => 
+  authFetch(`/api/search-numbers?${new URLSearchParams(params).toString()}`, token);
 
-export async function buyNumber(token: string, phone_number: string) {
-  return authFetch('/api/buy-number', token, {
-    method: 'POST',
-    body: JSON.stringify({ phone_number }),
-  })
-}
+export const buyNumber = (token: string, phone_number: string) => 
+  authFetch('/api/buy-number', token, { method: 'POST', body: JSON.stringify({ phone_number }) });
 
-export async function getMyNumbers(token: string) {
-  return authFetch('/api/my-numbers', token)
-}
-
-export async function releaseNumber(token: string, id: string) {
-  return authFetch(`/api/release-number/${id}`, token, { method: 'DELETE' })
-}
-
-export async function getWalletBalance(token: string) {
-  return authFetch('/api/wallet/balance', token)
-}
-
-export async function getTransactions(token: string) {
-  return authFetch('/api/wallet/transactions', token)
-}
-
-export async function verifyPayment(token: string, reference: string) {
-  return authFetch('/api/wallet/verify-payment', token, {
-    method: 'POST',
-    body: JSON.stringify({ reference }),
-  })
-}
+export const getWalletBalance = (token: string) => 
+  authFetch('/api/wallet/balance', token);
