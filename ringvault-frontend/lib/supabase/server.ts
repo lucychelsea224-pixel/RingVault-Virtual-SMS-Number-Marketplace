@@ -13,14 +13,13 @@ export function createClient() {
         getAll() {
           return cookieStore.getAll()
         },
-        // Handles setting cookies across Server Components and Actions
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set({ name, value, ...options })
             })
           } catch (error) {
-            // This is expected if called from a Server Component
+            // Safe to ignore in Server Components
           }
         },
       },
