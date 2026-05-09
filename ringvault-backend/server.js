@@ -1,18 +1,26 @@
+import express from 'express';
 import { createClient } from "@supabase/supabase-js";
+import "dotenv/config";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Get variables safely
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRole, {
-  auth: { persistSession: false },
+// Line 7: Defensive initialization to prevent the crash
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+const app = express();
+app.use(express.json());
+
+// --- ADD YOUR ROUTES HERE ---
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'server is running' });
 });
 
-export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-
-export async function getUser(req) {
-  const token = req.headers.get("authorization")?.split(" ")[1];
-  if (!token) return null;
-  const { data: { user } } = await supabaseClient.auth.getUser(token);
-  return user;
-}
+// Render requires the server to listen on the PORT variable
+const port = process.env.PORT || 10000;
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server running on port ${port}`);
+  if (!supabaseUrl) console.log("⚠️ Warning: Supabase URL is not configured.");
+});
