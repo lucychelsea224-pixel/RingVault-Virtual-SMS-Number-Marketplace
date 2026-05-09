@@ -1,29 +1,23 @@
 // lib/supabase.js
-// Two clients:
-//   supabaseAdmin  – uses SERVICE_ROLE key (bypasses RLS). Use ONLY on the server.
-//   supabaseClient – uses ANON key (respects RLS). Suitable for user-scoped queries
-//                    when the caller supplies an auth token.
-
 import { createClient } from "@supabase/supabase-js";
 import "dotenv/config";
 
-const { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY } =
-  process.env;
+// This update looks for BOTH standard and NEXT_PUBLIC prefixed variables 
+// to ensure Render finds them regardless of how you named them in the dashboard.
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// Strict check to stop the server with a clear message if keys are missing
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing Supabase environment variables. Check your .env file."
-  );
+  console.error("❌ DEPLOYMENT ERROR: Missing environment variables.");
+  console.error("Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set in Render Environment settings.");
+  throw new Error("Missing Supabase environment variables.");
 }
 
 /**
  * Admin client – bypasses Row Level Security.
- * Use for:
- *   • Balance deductions  (atomic updates)
- *   • Inserting SMS logs from the webhook
- *   • Reading any row regardless of user
- *
- * ⚠️  Never send this client or its key to the browser.
+ * Used for atomic balance updates and webhook logging.
  */
 export const supabaseAdmin = createClient(
   SUPABASE_URL,
@@ -38,15 +32,12 @@ export const supabaseAdmin = createClient(
 
 /**
  * Public client – respects RLS.
- * Use for:
- *   • Reading a user's own profile when their JWT is present
- *   • Auth helpers (e.g., verifying a Bearer token)
+ * Used for verifying user tokens.
  */
 export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /**
- * Verify a Supabase JWT from an Authorization: Bearer <token> header.
- * Returns { user } on success, throws on failure.
+ * Verify a Supabase JWT from an Authorization header.
  */
 export async function getUserFromToken(authHeader) {
   if (!authHeader?.startsWith("Bearer ")) {
@@ -57,6 +48,7 @@ export async function getUserFromToken(authHeader) {
     data: { user },
     error,
   } = await supabaseClient.auth.getUser(token);
+  
   if (error || !user) throw new Error("Invalid or expired token.");
   return user;
 }
