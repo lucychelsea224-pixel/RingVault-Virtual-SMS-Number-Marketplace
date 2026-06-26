@@ -32,8 +32,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {showTopUp && (
         <TopUpModal 
           onClose={() => setShowTopUp(false)} 
-          // This call now matches the interface updated in Step 1
-          onTopUp={(amt, email, id) => topUp(amt, email, id)} 
+          // The modal receives 1 argument (amt), parent adds the rest (email/id)
+          onTopUp={(amt) => topUp(amt, user.email!, user.id)} 
         />
       )}
     </div>
