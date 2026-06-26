@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Session, User, AuthSession } from '@supabase/supabase-js'
+import type { Session, User } from '@supabase/supabase-js'
 
 export function useSession() {
   const supabase = createClient()
@@ -16,7 +16,8 @@ export function useSession() {
       setLoading(false)
     })
     
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    // Fixed the line below with explicit types
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e: any, s: Session | null) => {
       setSession(s)
       setUser(s?.user ?? null)
     })
