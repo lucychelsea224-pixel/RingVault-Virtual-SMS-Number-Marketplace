@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export type SMSLog = {
@@ -9,14 +9,18 @@ export type SMSLog = {
 
 export function useRealtimeSMS(userId: string | undefined) {
   const supabase = createClient()
-  const [messages, setMessages]     = useState<SMSLog[]>([])
+  const [messages, setMessages] = useState<SMSLog[]>([])
   const [isConnected, setConnected] = useState(false)
 
   useEffect(() => {
     if (!userId) return
-    supabase.from('sms_logs').select('*').eq('user_id', userId)
-      .order('received_at', { ascending: false }).limit(50)
-      .then(({ data }) => setMessages(data ?? []))
+    supabase
+      .from('sms_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .order('received_at', { ascending: false })
+      .limit(50)
+      .then(({ data }: { data: SMSLog[] | null }) => setMessages(data ?? []))
   }, [userId])
 
   useEffect(() => {
