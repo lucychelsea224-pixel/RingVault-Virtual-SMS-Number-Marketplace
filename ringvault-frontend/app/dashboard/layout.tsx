@@ -30,7 +30,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </main>
       {showTopUp && (
-        <TopUpModal onClose={() => setShowTopUp(false)} onTopUp={(amt) => topUp(amt, user.email!, user.id)} />
+        <TopUpModal 
+          onClose={() => setShowTopUp(false)} 
+          // This call now matches the interface updated in Step 1
+          onTopUp={(amt, email, id) => topUp(amt, email, id)} 
+        />
       )}
     </div>
   )
