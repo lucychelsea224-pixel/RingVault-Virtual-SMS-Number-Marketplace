@@ -1,9 +1,12 @@
-// lib/api.ts
-// Matches "NEXT_PUBLIC_BACKEND_URL" from your Cloudflare Dashboard screenshot
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+// Use the environment variable from Cloudflare Dashboard. 
+// If it's missing, it will default to undefined (or you can set a production fallback).
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 async function authFetch(path: string, token: string, opts: RequestInit = {}) {
-  // Clean up the URL to prevent double slashes
+  if (!API_BASE) {
+    throw new Error("API_BASE is not defined. Check your Cloudflare Environment Variables.");
+  }
+
   const baseUrl = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   const fullUrl = `${baseUrl}${cleanPath}`;
@@ -27,6 +30,7 @@ async function authFetch(path: string, token: string, opts: RequestInit = {}) {
   return data;
 }
 
+// --- EXISTING FUNCTIONS ---
 export const searchNumbers = (token: string, params: any) => 
   authFetch(`/api/search-numbers?${new URLSearchParams(params).toString()}`, token);
 
@@ -44,3 +48,13 @@ export const verifyPayment = (token: string, reference: string) =>
     method: 'POST',
     body: JSON.stringify({ reference }),
   });
+
+// --- ADDED MISSING FUNCTIONS ---
+export const releaseNumber = (token: string, phone_number: string) => 
+  authFetch('/api/release-number', token, { 
+    method: 'POST', 
+    body: JSON.stringify({ phone_number }) 
+  });
+
+export const getTransactions = (token: string) => 
+  authFetch('/api/transactions', token);
