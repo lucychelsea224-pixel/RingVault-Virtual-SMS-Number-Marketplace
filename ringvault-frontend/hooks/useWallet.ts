@@ -1,35 +1,58 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+// Ensure these are exported from your lib/api.ts
 import { getWalletBalance, getTransactions, verifyPayment } from '@/lib/api'
 
 export function useWallet(token: string) {
-  const [balance, setBalance]           = useState(0)
+  const [balance, setBalance] = useState(0)
   const [transactions, setTransactions] = useState<any[]>([])
-  const [loading, setLoading]           = useState(true)
+  const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     if (!token) return
     try {
-      const [b, t] = await Promise.all([getWalletBalance(token), getTransactions(token)])
-      setBalance(b.balance); setTransactions(t.transactions)
-    } catch {}
-    finally { setLoading(false) }
+      // These must match the exports in lib/api.ts
+      const [balanceData, transactionsData] = await Promise.all([
+        getWalletBalance(token), 
+        getTransactions(token)
+      ])
+      setBalance(balanceData.balance)
+      setTransactions(transactionsData.transactions)
+    } catch (err) {
+      console.error("Failed to refresh wallet:", err)
+    } finally {
+      setLoading(false)
+    }
   }, [token])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => { 
+    refresh() 
+  }, [refresh])
 
-  const topUp = useCallback((amountUSD: number, email: string, userId: string) => {
+  const topUp = useCallback(async (amountUSD: number, email: string) => {
     return new Promise<number>((resolve, reject) => {
-      if (typeof window === 'undefined' || !(window as any).PaystackPop) return reject(new Error('Paystack not loaded'))
-      ;(window as any).PaystackPop.setup({
+      const paystack = (window as any).PaystackPop
+      if (typeof window === 'undefined' || !paystack) {
+        return reject(new Error('Paystack SDK not loaded'))
+      }
+
+      paystack.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
-        email, amount: Math.round(amountUSD * 1600 * 100), currency: 'NGN',
+        email,
+        amount: Math.round(amountUSD * 1600 * 100), // Ensure this matches your rate logic
+        currency: 'NGN',
         metadata: { usd_amount: amountUSD },
-        callback: async (r: any) => {
-          try { const d = await verifyPayment(token, r.reference); setBalance(d.balance); refresh(); resolve(d.balance) }
-          catch (e) { reject(e) }
+        callback: async (response: any) => {
+          try {
+            const data = await verifyPayment(token, response.reference)
+            setBalance(data.balance)
+            refresh()
+            resolve(data.balance)
+          } catch (e) {
+            reject(e)
+          }
         },
-        onClose: () => reject(new Error('Cancelled')),
+        onClose: () => reject(new Error('Payment cancelled')),
       }).openIframe()
     })
   }, [token, refresh])

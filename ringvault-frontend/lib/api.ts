@@ -1,4 +1,4 @@
-// Uses the NEXT_PUBLIC_BACKEND_URL from your Cloudflare Dashboard Environment Variables
+// lib/api.ts
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 async function authFetch(path: string, token: string, opts: RequestInit = {}) {
@@ -29,7 +29,7 @@ async function authFetch(path: string, token: string, opts: RequestInit = {}) {
   return data;
 }
 
-// --- EXISTING FUNCTIONS ---
+// --- API FUNCTIONS ---
 export const searchNumbers = (token: string, params: any) => 
   authFetch(`/api/search-numbers?${new URLSearchParams(params).toString()}`, token);
 
@@ -39,21 +39,21 @@ export const buyNumber = (token: string, phone_number: string) =>
 export const getMyNumbers = (token: string) => 
   authFetch('/api/my-numbers', token);
 
-export const getWalletBalance = (token: string) => 
-  authFetch('/api/wallet/balance', token);
-
-export const verifyPayment = (token: string, reference: string) => 
-  authFetch('/api/wallet/verify-payment', token, {
-    method: 'POST',
-    body: JSON.stringify({ reference }),
-  });
-
-// --- ADDED MISSING EXPORTS ---
 export const releaseNumber = (token: string, phone_number: string) => 
   authFetch('/api/release-number', token, { 
     method: 'POST', 
     body: JSON.stringify({ phone_number }) 
   });
 
+// --- WALLET FUNCTIONS ---
+export const getWalletBalance = (token: string) => 
+  authFetch('/api/wallet/balance', token);
+
 export const getTransactions = (token: string) => 
-  authFetch('/api/transactions', token);
+  authFetch('/api/wallet/transactions', token);
+
+export const verifyPayment = (token: string, reference: string) => 
+  authFetch('/api/wallet/verify-payment', token, {
+    method: 'POST',
+    body: JSON.stringify({ reference }),
+  });
