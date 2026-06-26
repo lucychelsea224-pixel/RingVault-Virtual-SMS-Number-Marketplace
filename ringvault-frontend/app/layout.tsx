@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Script from 'next/script' // 1. Import Script
 import './globals.css'
 import { ThemeProvider } from '@/components/ui/ThemeProvider'
 
@@ -10,11 +11,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <script src="https://js.paystack.co/v1/inline.js" async />
-      </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
+        {/* 2. Use the Script component instead of <head><script /></head> */}
+        <Script 
+          src="https://js.paystack.co/v1/inline.js" 
+          strategy="afterInteractive" 
+        />
       </body>
     </html>
   )
