@@ -1,5 +1,4 @@
-// Use the environment variable from Cloudflare Dashboard. 
-// If it's missing, it will default to undefined (or you can set a production fallback).
+// Uses the NEXT_PUBLIC_BACKEND_URL from your Cloudflare Dashboard Environment Variables
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 async function authFetch(path: string, token: string, opts: RequestInit = {}) {
@@ -49,7 +48,7 @@ export const verifyPayment = (token: string, reference: string) =>
     body: JSON.stringify({ reference }),
   });
 
-// --- ADDED MISSING FUNCTIONS ---
+// --- ADDED MISSING EXPORTS ---
 export const releaseNumber = (token: string, phone_number: string) => 
   authFetch('/api/release-number', token, { 
     method: 'POST', 
