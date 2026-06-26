@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-// 1. Import this type
 import { RealtimePostgresInsertPayload } from '@supabase/supabase-js'
 
 export type SMSLog = {
@@ -30,13 +29,13 @@ export function useRealtimeSMS(userId: string | undefined) {
     const ch = supabase.channel(`sms-${userId}`)
       .on('postgres_changes', 
         { event: 'INSERT', schema: 'public', table: 'sms_logs', filter: `user_id=eq.${userId}` },
-        // 2. Add the type here:
         (payload: RealtimePostgresInsertPayload<SMSLog>) => {
           const m = { ...payload.new as SMSLog, isNew: true }
           setMessages(prev => [m, ...prev])
           setTimeout(() => setMessages(prev => prev.map(x => x.id === m.id ? { ...x, isNew: false } : x)), 5000)
         })
-      .subscribe(s => setConnected(s === 'SUBSCRIBED'))
+      .subscribe((s: string) => setConnected(s === 'SUBSCRIBED'))
+      
     return () => { supabase.removeChannel(ch) }
   }, [userId])
 
