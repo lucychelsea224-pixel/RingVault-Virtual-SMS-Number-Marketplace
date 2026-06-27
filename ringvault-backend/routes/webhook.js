@@ -3,37 +3,33 @@ import { supabaseAdmin } from "../lib/supabase.js";
 
 const router = Router();
 
+// POST /api/webhook - Handles incoming SMS from Twilio
 router.post("/webhook", async (req, res) => {
   try {
-    const json = req.body;
+    // Twilio webhooks send data as url-encoded form values (req.body)
+    const { MessageSid, From, To, Body } = req.body;
     
-    if (!json || !json.data || !json.data.payload) {
-      return res.status(400).json({ success: false, error: "Invalid Telnyx payload" });
+    if (!To) {
+      return res.status(400).send("Missing recipient metadata");
     }
 
-    const { payload } = json.data;
-    
-    if (!payload.to || payload.to.length === 0) {
-      return res.status(200).json({ received: true, message: "No recipient numbers found" });
-    }
-
-    const toNumber = payload.to[0].phone_number;
-
+    // Lookup who owns this phone number in your database
     const { data: owner } = await supabaseAdmin
       .from("user_numbers")
       .select("user_id, id")
-      .eq("phone_number", toNumber)
+      .eq("phone_number", To)
       .single();
 
     if (owner) {
+      // Save incoming SMS to log table so it displays in your frontend inbox
       const { error: logError } = await supabaseAdmin.from("sms_logs").insert({
-        telnyx_message_id: payload.id,
+        telnyx_message_id: MessageSid, // Keeping column name or mapping string
         user_id: owner.user_id,
         user_number_id: owner.id,
-        from_number: payload.from?.phone_number || "Unknown",
-        to_number: toNumber,
-        body: payload.text || "",
-        received_at: payload.received_at || new Date().toISOString()
+        from_number: From || "Unknown",
+        to_number: To,
+        body: Body || "",
+        received_at: new Date().toISOString()
       });
 
       if (logError) {
@@ -41,10 +37,13 @@ router.post("/webhook", async (req, res) => {
       }
     }
 
-    return res.status(200).send("OK");
+    // Twilio expects a valid TwiML response back, an empty <Response /> is perfect
+    res.type('text/xml');
+    return res.send('<Response></Response>');
+
   } catch (error) {
     console.error("❌ Global Webhook Handler Exception:", error.message || error);
-    return res.status(500).json({ success: false, error: "Internal Server Error" });
+    return res.status(500).send("Internal Server Error");
   }
 });
 
