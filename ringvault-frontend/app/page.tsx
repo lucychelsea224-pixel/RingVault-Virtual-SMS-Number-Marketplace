@@ -1,17 +1,22 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+'use client'
+import { useEffect, useState } from 'react';
 
-// Explicitly declare edge runtime compatibility for Cloudflare Pages compilation
-export const runtime = 'edge'
+export default function Dashboard() {
+  const [balance, setBalance] = useState(0);
 
-export default async function HomePage() {
-  const supabase = createClient()
-  
-  const { data: { session } } = await supabase.auth.getSession()
-  
-  if (session) {
-    redirect('/dashboard')
-  }
-  
-  redirect('/auth/login')
+  const fetchBalance = async () => {
+    const res = await fetch('/api/wallet/balance');
+    const data = await res.json();
+    if (data.success) setBalance(data.balance);
+  };
+
+  // 1. Fetch on load
+  useEffect(() => { fetchBalance(); }, []);
+
+  // 2. Call fetchBalance() again inside your onTopUp handler!
+  const handleTopUpSuccess = async () => {
+    await fetchBalance(); // This forces the UI to refresh the balance
+  };
+
+  return <div>Wallet Balance: ${balance.toFixed(2)}</div>;
 }
