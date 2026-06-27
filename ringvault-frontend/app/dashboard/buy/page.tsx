@@ -22,7 +22,7 @@ export default function BuyPage() {
   const router = useRouter()
   const { token } = useSession()
   const [step, setStep] = useState(1)
-  const [country, setCountry] = useState<string | null>(null)
+  const [country, setCountry] = useState<string | null>(null) // Holds international dial code string (e.g. '1', '44')
   const [service, setService] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -55,7 +55,6 @@ export default function BuyPage() {
     
     pollIntervalRef.current = setInterval(async () => {
       try {
-        // Pointing to your Express routing mounting prefix (/api/check-otp/:id)
         const res = await fetch(`https://ringvault-api.onrender.com/api/check-otp/${id}`)
         const data = await res.json()
 
@@ -78,7 +77,7 @@ export default function BuyPage() {
 
   // Requests a brand new physical carrier mobile number extraction
   const handleRequestLine = async () => {
-    if (!service) return
+    if (!service || !country) return
     setLoading(true)
     setError('')
     setAllocatedNumber(null)
@@ -86,14 +85,17 @@ export default function BuyPage() {
     setFullSms(null)
 
     try {
-      // Pointing to your Express routing mounting prefix (/api/buy-number)
+      // 🌟 CONNECTED PAYLOAD: Passes down both the targeted service and state_code selection
       const response = await fetch('https://ringvault-api.onrender.com/api/buy-number', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ service_name: service })
+        body: JSON.stringify({ 
+          service_name: service, 
+          state_code: country // Sends standard state dialing identifier string directly
+        })
       })
 
       const data = await response.json()
@@ -123,11 +125,11 @@ export default function BuyPage() {
       <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-4 sm:p-7">
         {error && <div className="mb-4 p-3 rounded-xl bg-[rgba(247,91,91,0.1)] border border-[rgba(247,91,91,0.3)] text-[#F75B5B] text-[13px]">{error}</div>}
 
-        {/* Step 1: Country View */}
+        {/* Step 1: Country Selection View */}
         {step === 1 && (
           <>
-            <h2 className="font-head text-[17px] font-bold mb-1">Select a Country</h2>
-            <p className="text-[13px] text-[#8B92B0] mb-5">Choose the target country location for your phone verification line</p>
+            <h2 className="font-head text-[17px] font-bold mb-1">Select a Country Code</h2>
+            <p className="text-[13px] text-[#8B92B0] mb-5">Choose the target location prefix for your phone verification line</p>
             <CountryGrid selected={country} onSelect={handleCountrySelect} />
             <div className="flex justify-end mt-5">
               <Button className="w-full sm:w-auto" variant="accent" disabled={!country} onClick={() => setStep(2)}>Next: Target App →</Button>
@@ -140,7 +142,7 @@ export default function BuyPage() {
           <>
             <div className="flex items-center gap-3 mb-1">
               <span className="text-2xl">{countryObj?.flag}</span>
-              <h2 className="font-head text-[17px] font-bold">{countryObj?.name}</h2>
+              <h2 className="font-head text-[17px] font-bold">{countryObj?.name} (+{country})</h2>
             </div>
             <p className="text-[13px] text-[#8B92B0] mb-5">Select the application you want to bypass verification for</p>
             

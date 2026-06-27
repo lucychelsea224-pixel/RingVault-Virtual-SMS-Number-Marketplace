@@ -4,6 +4,17 @@ import { supabaseAdmin, getUser } from '../lib/supabase.js';
 
 const router = express.Router();
 
+// 🌟 DIALING CODE TO SMSPOOL SYSTEM ID MAP
+// Maps phone dialing codes (+1, +44, etc.) directly into SMSPool internal country variables
+const COUNTRY_MAP = {
+  "1": "1",    // USA / Canada (+1) -> SMSPool ID 1
+  "44": "2",   // United Kingdom (+44) -> SMSPool ID 2
+  "31": "3",   // Netherlands (+3荷兰) -> SMSPool ID 3
+  "49": "8",   // Germany (+49) -> SMSPool ID 8
+  "33": "17",  // France (+33) -> SMSPool ID 17
+  "91": "22",  // India (+9 Indian code) -> SMSPool ID 22
+};
+
 /**
  * Helper to transform data payload objects into application/x-www-form-urlencoded
  * queries required by SMSPool standard POST boundaries.
@@ -19,22 +30,30 @@ const createFormData = (data) => {
 };
 
 // =========================================================================
-// ENDPOINT 1: ALLOCATE A MOBILE VERIFICATION SIM LINE (WITH ACCURATE COCHING)
+// ENDPOINT 1: ALLOCATE LINE TRANSLATING STANDARD DIALING STATE CODES
 // =========================================================================
 router.post('/buy-number', async (req, res) => {
   try {
-    // 1. Authenticate user identity via incoming request context header hooks
     const user = await getUser(req);
     if (!user) {
       return res.status(401).json({ success: false, error: "Unauthorized access" });
     }
 
-    const { service_name } = req.body; 
+    // Frontend passes down service_name along with the dial state code (e.g. "1" or "44")
+    const { service_name, state_code } = req.body; 
     if (!service_name) {
       return res.status(400).json({ success: false, error: "Target application service name is required." });
     }
 
-    // 🌟 GUARDRAIL 1: Check your master SMSPool API balance BEFORE doing anything else
+    const sanitizedService = service_name.toLowerCase();
+    
+    // Clean string format if user included a '+' symbol
+    const cleanDialCode = state_code ? state_code.toString().replace('+', '').trim() : '1';
+    
+    // Convert dial code into SMSPool's internal vendor ID (Falls back to '1' if unmatched)
+    const targetCountryId = COUNTRY_MAP[cleanDialCode] || '1';
+
+    // 🌟 GUARDRAIL 1: Pre-flight check on Master Account Balance
     try {
       const balanceCheckResponse = await axios.post(
         'https://api.smspool.net/request/balance',
@@ -44,26 +63,25 @@ router.post('/buy-number', async (req, res) => {
 
       const masterBalance = parseFloat(balanceCheckResponse.data.balance || "0");
       
-      // If your SMSPool master balance is under $0.70 (typical high-end single verification ceiling)
       if (masterBalance < 0.70) {
         console.error(`🚨 RingVault Master Account Low Balance Warning: Current Balance is $${masterBalance}`);
         return res.status(503).json({ 
           success: false, 
-          error: "Server maintenance in progress. System stock replenishment ongoing, please try again shortly." 
+          error: "Server maintenance in progress. Stock replenishment ongoing, please try again shortly." 
         });
       }
     } catch (balanceApiErr) {
-      console.error("❌ Failed to verify external SMSPool health matrix:", balanceApiErr.message);
+      console.error("❌ Failed to verify external SMSPool wallet balance:", balanceApiErr.message);
       return res.status(502).json({ success: false, error: "Gateway authentication check failed. Please try again." });
     }
 
-    const RETAIL_PRICE = 2.00; // RingVault standard user wallet fallback pricing structure
+    const RETAIL_PRICE = 2.00; // Locked-in flat user fee
 
-    // 🌟 GUARDRAIL 2: Deduct user balance safely using database secure balance RPC trigger
+    // 🌟 GUARDRAIL 2: Secure local wallet balance deduction
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: RETAIL_PRICE,
-      p_description: `Generated Verification Line for ${service_name}`
+      p_description: `Generated Verification Line for ${service_name} (Dial: +${cleanDialCode})`
     });
 
     if (balanceError || !balanceCheck?.ok) {
@@ -71,12 +89,12 @@ router.post('/buy-number', async (req, res) => {
     }
 
     try {
-      // Step B: Send URL-encoded parameters to SMSPool secure endpoint
+      // Step B: Send converted country ID payload over to SMSPool
       const allocationPayload = {
         key: process.env.SMSPOOL_API_KEY,
-        country: '1',  // Default baseline set to United States (US = '1')
-        service: service_name.toLowerCase(),
-        pricing_option: '0' // 0 optimizes system for the cheapest current stock available
+        country: targetCountryId, 
+        service: sanitizedService,
+        pricing_option: '0' 
       };
 
       const response = await axios.post(
@@ -85,7 +103,6 @@ router.post('/buy-number', async (req, res) => {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      // SMSPool validation criteria: checks numeric flag value or true boolean success
       if (response.data.success !== 1 && response.data.success !== true) {
         throw new Error(response.data.message || "Line allocation declined by vendor pool.");
       }
@@ -93,18 +110,17 @@ router.post('/buy-number', async (req, res) => {
       const orderId = response.data.order_id;
       const assignedMobileNo = response.data.number;
 
-      // Step C: Log active extraction sequence trace safely inside database layer
+      // Step C: Save tracking log state inside database layer
       const { error: dbInsertError } = await supabaseAdmin.from("user_numbers").insert({
         user_id: user.id,
         phone_number: assignedMobileNo,
-        telnyx_number_id: orderId.toString(), // Map SMSPool identity string smoothly into number ID column
+        telnyx_number_id: orderId.toString(),
         status: "active",
         expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
       });
 
       if (dbInsertError) throw dbInsertError;
 
-      // Send operational credentials directly back to your frontend wizard pages
       return res.status(200).json({ 
         success: true, 
         phone_number: assignedMobileNo,
@@ -112,14 +128,14 @@ router.post('/buy-number', async (req, res) => {
       });
 
     } catch (apiError) {
-      // Auto-Refund Agent: Restores wallet balance instantly if background vendor allocation fails
+      // Fallback auto-refund matrix agent
       await supabaseAdmin.rpc("credit_balance", { 
         p_user_id: user.id, 
         p_amount: RETAIL_PRICE 
       });
       
       console.error("❌ SMSPool Stock Allocation Failure:", apiError.response?.data || apiError.message);
-      return res.status(502).json({ success: false, error: "Real mobile line out of stock. Wallet balance auto-refunded." });
+      return res.status(502).json({ success: false, error: "Real mobile line out of stock for this country code. Wallet balance auto-refunded." });
     }
   } catch (globalServerException) {
     console.error("❌ Critical Internal Global Route Handler Error:", globalServerException.message);
@@ -148,7 +164,6 @@ router.get('/check-otp/:session_id', async (req, res) => {
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
 
-    // SMSPool status mappings: 1 = Pending, 3 = Completed/Success, 6 = Expired/Timed Out
     const smsPoolStatusFlag = response.data.status;
     let computedStatusString = 'Pending';
     
@@ -158,26 +173,23 @@ router.get('/check-otp/:session_id', async (req, res) => {
     const extractedCode = response.data.sms || null;
     const rawMessageBody = response.data.full_sms || response.data.sms || null;
 
-    // Saves incoming OTP information into the database right when it hits SMSPool
     if (smsPoolStatusFlag === 3 && extractedCode) {
       await supabaseAdmin
         .from("user_numbers")
         .update({ 
           status: "completed",
-          sms_code: extractedCode,       // Feeds history data layouts cleanly
-          raw_sms_text: rawMessageBody  // Populates user inbox display layouts
+          sms_code: extractedCode,       
+          raw_sms_text: rawMessageBody  
         })
         .eq("telnyx_number_id", session_id.toString());
         
     } else if (smsPoolStatusFlag === 6) {
-      // Mark as expired inside Supabase to prevent un-synchronized historical deadlocks
       await supabaseAdmin
         .from("user_numbers")
         .update({ status: "expired" })
         .eq("telnyx_number_id", session_id.toString());
     }
 
-    // Pass structured, uniform clean response schemas directly back to the app frontend
     return res.status(200).json({
       success: true,
       status: computedStatusString, 
