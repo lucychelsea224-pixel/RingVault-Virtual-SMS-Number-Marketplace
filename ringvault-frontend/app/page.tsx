@@ -1,3 +1,4 @@
+// REMOVE AND DELETE THIS ENTIRE BLOCK FROM THE BOTTOM OF app/page.tsx:
 'use client'
 import { useEffect, useState } from 'react';
 
