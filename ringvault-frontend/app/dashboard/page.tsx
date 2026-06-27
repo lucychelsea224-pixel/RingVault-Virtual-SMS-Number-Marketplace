@@ -10,6 +10,9 @@ import { SMSItem } from '@/components/inbox/SMSItem'
 import { getMyNumbers, releaseNumber } from '@/lib/api'
 import Link from 'next/link'
 
+// Force the Edge runtime compatibility for Cloudflare Pages compilation
+export const runtime = 'edge'
+
 export default function DashboardPage() {
   const { user, token } = useSession()
   const { balance, transactions } = useWallet(token)
@@ -56,10 +59,14 @@ export default function DashboardPage() {
             </div>
           ) : (
             <table className="w-full">
-              <thead><tr className="text-[11px] font-semibold text-[#5A6280] uppercase tracking-wide">
-                <th className="text-left pb-3">Number</th><th className="text-left pb-3">Country</th>
-                <th className="text-left pb-3">Status</th><th className="pb-3"></th>
-              </tr></thead>
+              <thead>
+                <tr className="text-[11px] font-semibold text-[#5A6280] uppercase tracking-wide">
+                  <th className="text-left pb-3">Number</th>
+                  <th className="text-left pb-3">Country</th>
+                  <th className="text-left pb-3">Status</th>
+                  <th className="pb-3"></th>
+                </tr>
+              </thead>
               <tbody>
                 {numbers.map(n => (
                   <tr key={n.id} className="border-t border-[#2A3352] hover:bg-[#1C2236] transition-colors">
