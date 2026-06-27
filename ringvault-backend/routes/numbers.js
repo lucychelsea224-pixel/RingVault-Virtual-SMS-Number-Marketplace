@@ -1,48 +1,25 @@
 import express from 'express';
-import Sendchamp from 'sendchamp-sdk';
+import axios from 'axios';
 import { supabaseAdmin, getUser } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// Initialize Sendchamp with your project token
-const sendchamp = new Sendchamp({
-  publicKey: process.env.SENDCHAMP_PUBLIC_KEY
-});
-
-// GET: Search for available virtual numbers from Sendchamp
-router.get('/search-numbers', async (req, res) => {
+// Helper function to handle Textverified's Bearer authentication flow
+async function getBearerToken() {
   try {
-    const { country_code } = req.query; // e.g. "US", "GB", "NG"
-    
-    if (!country_code) {
-      return res.status(400).json({ success: false, error: "Country code is required" });
-    }
-
-    // Hit Sendchamp's available numbers pool
-    const response = await sendchamp.getVirtualNumbers({
-      country: country_code.toLowerCase(),
-      limit: 10
+    const response = await axios.post('https://www.textverified.com/api/v2/Authentication', {}, {
+      headers: {
+        'X-API-KEY': process.env.TEXTVERIFIED_API_KEY
+      }
     });
-
-    if (!response || !response.data) {
-      return res.status(200).json({ success: true, numbers: [] });
-    }
-
-    // Format output symmetrically for your frontend marketplace loop
-    const formattedNumbers = response.data.map(num => ({
-      phone_number: num.phone_number,
-      country_code: country_code.toUpperCase(),
-      cost: 2.00 // Your $2 standard marketplace item pricing 
-    }));
-
-    return res.status(200).json({ success: true, numbers: formattedNumbers });
+    return response.data.token;
   } catch (error) {
-    console.error("Sendchamp Search Error:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    console.error("Textverified Auth Error:", error.response?.data || error.message);
+    throw new Error("Failed authentication with Textverified.");
   }
-});
+}
 
-// POST: Rent/Buy a virtual number via Sendchamp
+// POST: Request a premium Non-VoIP mobile number for app activation
 router.post('/buy-number', async (req, res) => {
   try {
     const user = await getUser(req);
@@ -50,18 +27,19 @@ router.post('/buy-number', async (req, res) => {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
 
-    const { phone_number } = req.body;
-    if (!phone_number) {
-      return res.status(400).json({ success: false, error: "Phone number is required" });
+    // Explicitly pass target app (e.g., 'whatsapp', 'telegram', 'google') from frontend
+    const { service_name } = req.body; 
+    if (!service_name) {
+      return res.status(400).json({ success: false, error: "Target verification service name is required" });
     }
 
-    const PRICE = 2.0;
+    const PRICE = 2.00; // Your markup marketplace item price
 
     // Deduct user balance in Supabase
     const { data: result, error: dbError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: PRICE,
-      p_description: `Purchased ${phone_number}`
+      p_description: `Requested Non-VoIP Line for ${service_name}`
     });
 
     if (dbError || !result?.ok) {
@@ -69,54 +47,81 @@ router.post('/buy-number', async (req, res) => {
     }
 
     try {
-      // Allocate the phone line on Sendchamp and point webhooks to your backend
-      const purchase = await sendchamp.purchaseVirtualNumber({
-        phone_number: phone_number,
-        webhook_url: `https://${req.get('host')}/api/webhook`
+      // 1. Grab fresh authorization token
+      const token = await getBearerToken();
+
+      // 2. Provision real mobile line from Textverified
+      const sessionResponse = await axios.post('https://www.textverified.com/api/v2/Verifications', {
+        service_name: service_name.toLowerCase(),
+        requested_duration: '1d'
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
 
-      // Insert tracking record into your user inventory table
+      const { id, number, status } = sessionResponse.data;
+
+      // 3. Insert tracking record into your user inventory table
       const { error: insertError } = await supabaseAdmin.from("user_numbers").insert({
         user_id: user.id,
-        phone_number: phone_number,
-        telnyx_number_id: purchase.data.id || "sendchamp_line", 
+        phone_number: number,
+        telnyx_number_id: id.toString(), // We map the session ID to your existing tracking column
         status: "active",
-        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // Usually 15 min expiration window for OTPs
       });
 
       if (insertError) throw insertError;
 
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ 
+        success: true, 
+        phone_number: number,
+        session_id: id 
+      });
 
     } catch (err) {
-      // Automatic failover wallet refund
+      // Wallet failover rollback refund
       await supabaseAdmin.rpc("credit_balance", { 
         p_user_id: user.id, 
         p_amount: PRICE 
       });
-      console.error("Sendchamp booking error:", err);
-      return res.status(502).json({ success: false, error: "Provider allocation error. Refunded." });
+      console.error("Textverified Line Booking Error:", err.response?.data || err.message);
+      return res.status(502).json({ success: false, error: "Real mobile allocation failure. Wallet refunded." });
     }
   } catch (globalError) {
     return res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 
-// GET: Active numbers view
-router.get('/my-numbers', async (req, res) => {
+// GET: Check session details / Pull incoming OTP code on demand
+router.get('/check-otp/:session_id', async (req, res) => {
   try {
-    const user = await getUser(req);
-    if (!user) return res.status(401).json({ success: false, error: "Unauthorized" });
+    const { session_id } = req.params;
+    if (!session_id) {
+      return res.status(400).json({ success: false, error: "Session tracking ID is required" });
+    }
 
-    const { data, error } = await supabaseAdmin
-      .from("user_numbers")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("status", "active");
+    const token = await getBearerToken();
 
-    if (error) throw error;
-    return res.status(200).json({ success: true, numbers: data || [] });
+    // Pull real-time details from Textverified using the session ID
+    const detailsResponse = await axios.get(`https://www.textverified.com/api/v2/Verifications/${session_id}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const { code, sms, status } = detailsResponse.data;
+
+    return res.status(200).json({
+      success: true,
+      status: status, // returns: 'Pending', 'Completed', or 'Expired'
+      otp_code: code || null, // Extracts raw parsed code if delivered
+      full_sms: sms || null  // Extracts full body message strings
+    });
+
   } catch (error) {
+    console.error("OTP Pull Error:", error.response?.data || error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
