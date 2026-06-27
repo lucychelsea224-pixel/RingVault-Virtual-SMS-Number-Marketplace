@@ -55,10 +55,13 @@ export default function BuyPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto animate-[fadeSlide_0.3s_ease]">
-      <StepBar current={step} />
+    <div className="w-full max-w-2xl mx-auto animate-[fadeSlide_0.3s_ease] px-2 sm:px-4">
+      {/* Step progress bars should have fluid container constraints */}
+      <div className="w-full overflow-x-auto mb-2">
+        <StepBar current={step} />
+      </div>
 
-      <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-7">
+      <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-4 sm:p-7">
         {error && <div className="mb-4 p-3 rounded-xl bg-[rgba(247,91,91,0.1)] border border-[rgba(247,91,91,0.3)] text-[#F75B5B] text-[13px]">{error}</div>}
 
         {/* Step 1 */}
@@ -68,7 +71,7 @@ export default function BuyPage() {
             <p className="text-[13px] text-[#8B92B0] mb-5">Choose the country for your virtual SMS number</p>
             <CountryGrid selected={country} onSelect={handleCountrySelect} />
             <div className="flex justify-end mt-5">
-              <Button variant="accent" disabled={!country} onClick={() => setStep(2)}>Next: Select State →</Button>
+              <Button className="w-full sm:w-auto" variant="accent" disabled={!country} onClick={() => setStep(2)}>Next: Select State →</Button>
             </div>
           </>
         )}
@@ -92,9 +95,9 @@ export default function BuyPage() {
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5A6280] pointer-events-none text-xs">▼</span>
               </div>
             </div>
-            <div className="flex justify-between">
-              <Button variant="ghost" onClick={() => setStep(1)}>← Back</Button>
-              <Button variant="accent" disabled={!state} loading={loading} onClick={handleSearchNumbers}>Search Numbers →</Button>
+            <div className="flex flex-col-reverse sm:flex-row justify-between gap-3">
+              <Button className="w-full sm:w-auto" variant="ghost" onClick={() => setStep(1)}>← Back</Button>
+              <Button className="w-full sm:w-auto" variant="accent" disabled={!state} loading={loading} onClick={handleSearchNumbers}>Search Numbers →</Button>
             </div>
           </>
         )}
@@ -102,15 +105,17 @@ export default function BuyPage() {
         {/* Step 3 */}
         {step === 3 && (
           <>
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-2">
               <div>
-                <h2 className="font-head text-[17px] font-bold">{countryObj?.flag} {countryObj?.name} — {state}</h2>
+                <h2 className="font-head text-[16px] sm:text-[17px] font-bold">{countryObj?.flag} {countryObj?.name} — {state}</h2>
                 <p className="text-[13px] text-[#8B92B0]">{numbers.length} numbers available</p>
               </div>
             </div>
-            <NumberList numbers={numbers} loading={loading} onBuy={handleBuy} buying={buying} />
+            <div className="w-full overflow-x-auto">
+              <NumberList numbers={numbers} loading={loading} onBuy={handleBuy} buying={buying} />
+            </div>
             <div className="mt-5">
-              <Button variant="ghost" onClick={() => setStep(2)}>← Back</Button>
+              <Button className="w-full sm:w-auto" variant="ghost" onClick={() => setStep(2)}>← Back</Button>
             </div>
           </>
         )}
