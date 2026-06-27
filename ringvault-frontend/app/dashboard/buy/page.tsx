@@ -7,7 +7,7 @@ import { CountryGrid, COUNTRIES } from '@/components/wizard/CountryGrid'
 import { Button } from '@/components/ui/Button'
 import { useSession } from '@/hooks/useSession'
 
-// Popular Textverified services matching their backend naming layout
+// Synced seamlessly with standard SMSPool application service naming keys
 const SERVICES = [
   { id: 'whatsapp', name: 'WhatsApp' },
   { id: 'telegram', name: 'Telegram' },
@@ -42,7 +42,7 @@ export default function BuyPage() {
     setService('') 
   }
 
-  // Clear polling loops safely if the user changes tabs or walks away
+  // Clear polling loops safely if the user changes tabs or leaves the page
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
@@ -55,7 +55,7 @@ export default function BuyPage() {
     
     pollIntervalRef.current = setInterval(async () => {
       try {
-        // FIXED: Pointing accurately to the correct Express routing mounting prefix
+        // Pointing to your Express routing mounting prefix (/api/check-otp/:id)
         const res = await fetch(`https://ringvault-api.onrender.com/api/check-otp/${id}`)
         const data = await res.json()
 
@@ -67,7 +67,7 @@ export default function BuyPage() {
             setSmsStatus('Success! Verification code extracted.')
           } else if (data.status === 'Expired') {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
-            setSmsStatus('Session window expired. Please try again.')
+            setSmsStatus('Session window expired or timed out. Please try again.')
           }
         }
       } catch (err) {
@@ -86,7 +86,7 @@ export default function BuyPage() {
     setFullSms(null)
 
     try {
-      // FIXED: Pointing accurately to the correct Express routing mounting prefix
+      // Pointing to your Express routing mounting prefix (/api/buy-number)
       const response = await fetch('https://ringvault-api.onrender.com/api/buy-number', {
         method: 'POST',
         headers: {
@@ -102,7 +102,7 @@ export default function BuyPage() {
         setAllocatedNumber(data.phone_number)
         setSessionId(data.session_id)
         setStep(3)
-        // Fire polling engine automatically using returned session identity tracking hook
+        // Fire polling engine automatically using returned session identity tracking token
         startOtpPolling(data.session_id)
       } else {
         throw new Error(data.error || 'Failed to allocate premium line.')

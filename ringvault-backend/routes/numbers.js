@@ -4,39 +4,17 @@ import { supabaseAdmin, getUser } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// High-speed token cache to avoid spamming the Auth endpoint on every single poll request
-let tokenCache = {
-  token: null,
-  expiresAt: 0
+// Helper to convert objects to URLSearchParams format for SMSPool's content-type requirements
+const createFormData = (data) => {
+  const params = new URLSearchParams();
+  for (const key in data) {
+    params.append(key, data[key]);
+  }
+  return params;
 };
 
-// Internal Agent Helper: Ensures we always have a valid, unexpired Bearer Token
-async function getBearerToken() {
-  const now = Date.now();
-  // If we have a cached token valid for at least another 60 seconds, reuse it
-  if (tokenCache.token && tokenCache.expiresAt > now + 60000) {
-    return tokenCache.token;
-  }
-
-  try {
-    const response = await axios.post('https://www.textverified.com/api/v2/Authentication', {}, {
-      headers: {
-        'X-API-KEY': process.env.TEXTVERIFIED_API_KEY
-      }
-    });
-    
-    // Textverified tokens typically last 1 hour. We cache it safely.
-    tokenCache.token = response.data.token;
-    tokenCache.expiresAt = now + 3000000; // 50 minutes safety margin
-    return tokenCache.token;
-  } catch (error) {
-    console.error("❌ Textverified Authentication Gateway Failure:", error.response?.data || error.message);
-    throw new Error("Textverified Authentication Failed.");
-  }
-}
-
 // ==========================================
-// ENDPOINT 1: BUY/EXTRACT A REAL MOBILE NUMBER
+// ENDPOINT 1: BUY/EXTRACT A NUMBER FROM SMSPOOL
 // ==========================================
 router.post('/buy-number', async (req, res) => {
   try {
@@ -45,19 +23,18 @@ router.post('/buy-number', async (req, res) => {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
 
-    // Expecting targets like 'whatsapp', 'telegram', 'google', 'instagram'
     const { service_name } = req.body; 
     if (!service_name) {
       return res.status(400).json({ success: false, error: "Target service name is required" });
     }
 
-    const PRICE = 2.00; // Standard RingVault consumer retail pricing markup
+    const PRICE = 2.00; // Your RingVault consumer retail markup
 
     // Step A: Deduct user balance in Supabase securely via RPC
     const { data: result, error: dbError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: PRICE,
-      p_description: `Requested Non-VoIP Line for ${service_name}`
+      p_description: `Requested Line for ${service_name}`
     });
 
     if (dbError || !result?.ok) {
@@ -65,46 +42,53 @@ router.post('/buy-number', async (req, res) => {
     }
 
     try {
-      // Step B: Connect to physical carrier SIM pools via Textverified
-      const token = await getBearerToken();
-      const sessionResponse = await axios.post('https://www.textverified.com/api/v2/Verifications', {
-        service_name: service_name.toLowerCase(),
-        requested_duration: '1d'
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // Step B: Request SMSPool allocation (Using US country "1" as standard baseline)
+      const purchaseData = {
+        key: process.env.SMSPOOL_API_KEY,
+        country: '1', 
+        service: service_name.toLowerCase(),
+        pricing_option: '0' // 0 handles cheapest available pool automatically
+      };
 
-      const { id, number } = sessionResponse.data;
+      const response = await axios.post(
+        'https://api.smspool.net/purchase/sms', 
+        createFormData(purchaseData),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
 
-      // Step C: Save verification line tracking session to user data layer
+      // SMSPool returns { success: 1, number: "...", order_id: "...", ... }
+      if (response.data.success !== 1 && response.data.success !== true) {
+        throw new Error(response.data.message || "SMSPool stock allocation issue.");
+      }
+
+      const orderId = response.data.order_id;
+      const phoneNumber = response.data.number;
+
+      // Step C: Track verification line inside your database layer
       const { error: insertError } = await supabaseAdmin.from("user_numbers").insert({
         user_id: user.id,
-        phone_number: number,
-        telnyx_number_id: id.toString(), // Map Textverified session ID cleanly into your tracking structure
+        phone_number: phoneNumber,
+        telnyx_number_id: orderId.toString(), // Map SMSPool order_id perfectly into tracking column
         status: "active",
-        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15-minute standard expiration window for OTP completion
+        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
       });
 
       if (insertError) throw insertError;
 
-      // Complete optimization feedback to frontend UI
       return res.status(200).json({ 
         success: true, 
-        phone_number: number,
-        session_id: id 
+        phone_number: phoneNumber,
+        session_id: orderId 
       });
 
     } catch (err) {
-      // Automatic Fallback Agent: Instantly credit the user back if the carrier extraction fails
+      // Automatic Fallback Agent: Instantly refund user if vendor extraction fails
       await supabaseAdmin.rpc("credit_balance", { 
         p_user_id: user.id, 
         p_amount: PRICE 
       });
-      console.error("❌ Textverified Mobile Extraction Error:", err.response?.data || err.message);
-      return res.status(502).json({ success: false, error: "Real mobile line out of stock. Wallet automatically refunded." });
+      console.error("❌ SMSPool Allocation Failure:", err.response?.data || err.message);
+      return res.status(502).json({ success: false, error: "Real mobile line out of stock. Wallet auto-refunded." });
     }
   } catch (globalError) {
     return res.status(500).json({ success: false, error: "Internal operational server error" });
@@ -112,7 +96,7 @@ router.post('/buy-number', async (req, res) => {
 });
 
 // ==========================================
-// ENDPOINT 2: LIVE OTP POLLING / CHECK STATUS
+// ENDPOINT 2: LIVE OTP STATUS POLLING Loop
 // ==========================================
 router.get('/check-otp/:session_id', async (req, res) => {
   try {
@@ -121,28 +105,33 @@ router.get('/check-otp/:session_id', async (req, res) => {
       return res.status(400).json({ success: false, error: "Session identification tracking code required" });
     }
 
-    const token = await getBearerToken();
+    const checkData = {
+      key: process.env.SMSPOOL_API_KEY,
+      orderid: session_id
+    };
 
-    // Query Textverified directly for this explicit number extraction stream
-    const detailsResponse = await axios.get(`https://www.textverified.com/api/v2/Verifications/${session_id}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    const response = await axios.post(
+      'https://api.smspool.net/sms/check', 
+      createFormData(checkData),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
 
-    const { code, sms, status } = detailsResponse.data;
+    // SMSPool status mappings: 1 = Pending, 3 = Completed/Success, 6 = Expired/Timed Out
+    const smsPoolStatus = response.data.status;
+    let statusString = 'Pending';
+    if (smsPoolStatus === 3) statusString = 'Completed';
+    if (smsPoolStatus === 6) statusString = 'Expired';
 
-    // Status mapping response returned: 'Pending', 'Completed', or 'Expired'
     return res.status(200).json({
       success: true,
-      status: status, 
-      otp_code: code || null, // Delivers the raw extracted passcode once found
-      full_sms: sms || null   // Full verification string block
+      status: statusString, 
+      otp_code: response.data.sms || null, // Holds the code once extracted
+      full_sms: response.data.full_sms || response.data.sms || null
     });
 
   } catch (error) {
-    console.error("❌ Textverified OTP Check Loop Failure:", error.response?.data || error.message);
-    return res.status(500).json({ success: false, error: "Failed to sync OTP records." });
+    console.error("❌ SMSPool Code Verification Polling Loop Failure:", error.response?.data || error.message);
+    return res.status(500).json({ success: false, error: "Failed to sync dynamic OTP records." });
   }
 });
 
