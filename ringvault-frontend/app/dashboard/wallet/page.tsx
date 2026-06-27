@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Topbar } from '@/components/Topbar'
+import { Topbar } from '@/components/dashboard/Topbar'
 import { TopUpModal } from '@/components/TopUpModal'
 
 // Mock User structure for authentication safety fallbacks
