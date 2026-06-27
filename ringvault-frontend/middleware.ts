@@ -1,8 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// Explicitly declare edge runtime compatibility for Cloudflare Pages
-export const runtime = 'edge';
+// REMOVED the runtime='edge' line from here because Next.js middleware is edge by default!
 
 export async function middleware(request: NextRequest) {
   // Create an initial response
