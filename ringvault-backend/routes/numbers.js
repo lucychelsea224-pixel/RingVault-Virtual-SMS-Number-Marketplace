@@ -1,44 +1,48 @@
 import express from 'express';
-import twilio from 'twilio';
+import Sendchamp from 'sendchamp-sdk';
 import { supabaseAdmin, getUser } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// Initialize Twilio client using your account credentials
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID, 
-  process.env.TWILIO_AUTH_TOKEN
-);
+// Initialize Sendchamp with your project token
+const sendchamp = new Sendchamp({
+  publicKey: process.env.SENDCHAMP_PUBLIC_KEY
+});
 
-// GET: Search for available numbers from Twilio
+// GET: Search for available virtual numbers from Sendchamp
 router.get('/search-numbers', async (req, res) => {
   try {
-    const { country_code } = req.query;
+    const { country_code } = req.query; // e.g. "US", "GB", "NG"
     
     if (!country_code) {
       return res.status(400).json({ success: false, error: "Country code is required" });
     }
 
-    // Hit live Twilio phone line inventory
-    const response = await twilioClient.availablePhoneNumbers(country_code.toUpperCase())
-      .local
-      .list({ limit: 10 });
+    // Hit Sendchamp's available numbers pool
+    const response = await sendchamp.getVirtualNumbers({
+      country: country_code.toLowerCase(),
+      limit: 10
+    });
 
-    // Format the response array cleanly for your frontend mapping loop
-    const formattedNumbers = response.map(num => ({
-      phone_number: num.phoneNumber,
+    if (!response || !response.data) {
+      return res.status(200).json({ success: true, numbers: [] });
+    }
+
+    // Format output symmetrically for your frontend marketplace loop
+    const formattedNumbers = response.data.map(num => ({
+      phone_number: num.phone_number,
       country_code: country_code.toUpperCase(),
-      cost: 2.00 // Keeping your marketplace markup price consistent
+      cost: 2.00 // Your $2 standard marketplace item pricing 
     }));
 
     return res.status(200).json({ success: true, numbers: formattedNumbers });
   } catch (error) {
-    console.error("Twilio Search Error:", error);
+    console.error("Sendchamp Search Error:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// POST: Buy a number via Twilio
+// POST: Rent/Buy a virtual number via Sendchamp
 router.post('/buy-number', async (req, res) => {
   try {
     const user = await getUser(req);
@@ -53,7 +57,7 @@ router.post('/buy-number', async (req, res) => {
 
     const PRICE = 2.0;
 
-    // Atomic Balance Deduction
+    // Deduct user balance in Supabase
     const { data: result, error: dbError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: PRICE,
@@ -65,18 +69,17 @@ router.post('/buy-number', async (req, res) => {
     }
 
     try {
-      // Provision the line directly into your Twilio account
-      const incomingNumber = await twilioClient.incomingPhoneNumbers.create({
-        phoneNumber: phone_number,
-        // Point SMS directly to your Render backend webhook route
-        smsUrl: `https://${req.get('host')}/api/webhook` 
+      // Allocate the phone line on Sendchamp and point webhooks to your backend
+      const purchase = await sendchamp.purchaseVirtualNumber({
+        phone_number: phone_number,
+        webhook_url: `https://${req.get('host')}/api/webhook`
       });
 
-      // Insert record into your Supabase database matching tracking IDs
+      // Insert tracking record into your user inventory table
       const { error: insertError } = await supabaseAdmin.from("user_numbers").insert({
         user_id: user.id,
         phone_number: phone_number,
-        telnyx_number_id: incomingNumber.sid, // Keep your table column name or match string
+        telnyx_number_id: purchase.data.id || "sendchamp_line", 
         status: "active",
         expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });
@@ -86,20 +89,20 @@ router.post('/buy-number', async (req, res) => {
       return res.status(200).json({ success: true });
 
     } catch (err) {
-      // Refund Wallet on API Failures
+      // Automatic failover wallet refund
       await supabaseAdmin.rpc("credit_balance", { 
         p_user_id: user.id, 
         p_amount: PRICE 
       });
-      console.error("Twilio provisioning failure:", err);
-      return res.status(502).json({ success: false, error: "Twilio provision error. Wallet refunded." });
+      console.error("Sendchamp booking error:", err);
+      return res.status(502).json({ success: false, error: "Provider allocation error. Refunded." });
     }
   } catch (globalError) {
     return res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 
-// GET: Get user active numbers
+// GET: Active numbers view
 router.get('/my-numbers', async (req, res) => {
   try {
     const user = await getUser(req);
