@@ -3,7 +3,12 @@ import { useTheme } from '@/components/ui/ThemeProvider'
 import { Toggle } from '@/components/ui/Toggle'
 import { Button } from '@/components/ui/Button'
 
-interface TopbarProps { title: string; balance: number; onTopUp: () => void; onSignOut: () => void }
+interface TopbarProps { 
+  title: string; 
+  balance: number; 
+  onTopUp: () => void; 
+  onSignOut: () => void; 
+}
 
 export function Topbar({ title, balance, onTopUp, onSignOut }: TopbarProps) {
   const { dark, toggle } = useTheme()
@@ -18,7 +23,8 @@ export function Topbar({ title, balance, onTopUp, onSignOut }: TopbarProps) {
         {/* Wallet chip */}
         <div className="flex items-center gap-2 bg-[#1C2236] border border-[#2A3352] rounded-full px-3 sm:px-4 py-1 sm:py-1.5 text-[12px] sm:text-[13px] font-semibold">
           <span className="w-2 h-2 rounded-full bg-[#22C67A] shadow-[0_0_8px_rgba(34,198,122,0.8)]" />
-          ${balance.toFixed(2)}
+          {/* Formats safely to 2 decimal places */}
+          ${typeof balance === 'number' ? balance.toFixed(2) : '0.00'}
         </div>
         
         {/* Quick action controls */}
