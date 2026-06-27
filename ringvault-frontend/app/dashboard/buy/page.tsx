@@ -55,7 +55,8 @@ export default function BuyPage() {
     
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`https://ringvault-api.onrender.com/routes/numbers/check-otp/${id}`)
+        // FIXED: Pointing accurately to the correct Express routing mounting prefix
+        const res = await fetch(`https://ringvault-api.onrender.com/api/check-otp/${id}`)
         const data = await res.json()
 
         if (data.success) {
@@ -85,7 +86,8 @@ export default function BuyPage() {
     setFullSms(null)
 
     try {
-      const response = await fetch('https://ringvault-api.onrender.com/routes/numbers/buy-number', {
+      // FIXED: Pointing accurately to the correct Express routing mounting prefix
+      const response = await fetch('https://ringvault-api.onrender.com/api/buy-number', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
