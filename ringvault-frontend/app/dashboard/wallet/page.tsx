@@ -1,15 +1,13 @@
 'use client'
 import { useState, useEffect } from 'react'
-import dynamic from 'next/dynamic' // 1. Added Next.js dynamic utility
+import dynamic from 'next/dynamic'
 import { Topbar } from '@/components/dashboard/Topbar'
 
-// 2. Wrap TopUpModal to prevent the "window is not defined" server pre-render crash
 const TopUpModal = dynamic(
   () => import('@/components/wallet/TopUpModal').then((mod) => mod.TopUpModal),
   { ssr: false }
 )
 
-// Mock User structure for authentication safety fallbacks
 interface UserProfile {
   id: string;
   email: string;
@@ -21,20 +19,16 @@ export default function WalletPage() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
 
-  // Fetch current user authentication profiles & balances
   const fetchWalletData = async () => {
     try {
-      // 1. Get user profile details
       const userRes = await fetch('/api/auth/me') 
       const userData = await userRes.json()
       if (userData?.user) {
         setUser(userData.user)
       } else {
-        // Fallback placeholder identity for testing environments
         setUser({ id: '00000000-0000-0000-0000-000000000000', email: 'testuser@ringvault.com' })
       }
 
-      // 2. Fetch balance matching state
       const balanceRes = await fetch('/api/wallet/balance')
       const balanceData = await balanceRes.json()
       if (balanceData.success) {
@@ -53,7 +47,6 @@ export default function WalletPage() {
 
   const handleSignOut = () => {
     console.log("Signing out user...")
-    // Insert your custom logout function here
   }
 
   if (loading) {
@@ -66,7 +59,6 @@ export default function WalletPage() {
 
   return (
     <div className="min-h-screen w-full bg-[#0B0E17] text-white flex flex-col overflow-x-hidden">
-      {/* Top Bar Navigation layout */}
       <Topbar 
         title="My Wallet Storage" 
         balance={balance} 
@@ -74,7 +66,6 @@ export default function WalletPage() {
         onSignOut={handleSignOut} 
       />
 
-      {/* Main Page Layout Content Display area */}
       <main className="flex-1 p-4 sm:p-7 max-w-5xl w-full mx-auto flex flex-col gap-4 sm:gap-6">
         <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-6 mb-2">
           <p className="text-xs font-bold text-[#5A6280] uppercase tracking-wider mb-1">Available Funds</p>
@@ -88,7 +79,6 @@ export default function WalletPage() {
         </div>
       </main>
 
-      {/* Complete Connected Modal rendering logic */}
       {showTopUp && user && (
         <TopUpModal
           onClose={() => setShowTopUp(false)}

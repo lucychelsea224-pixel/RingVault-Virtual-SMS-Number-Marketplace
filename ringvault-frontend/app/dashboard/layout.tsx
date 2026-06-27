@@ -1,10 +1,14 @@
+'use client'
 import { Sidebar } from '@/components/dashboard/Sidebar'
+import { useSession } from '@/hooks/useSession'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { user } = useSession()
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-[#0D111A] text-white">
       {/* Sidebar handles hiding/showing via breakpoints internally */}
-      <Sidebar user={null} /> {/* Pass your custom authenticated user metadata state here */}
+      <Sidebar user={user} />
       
       {/* Main viewport area 
         - Adds bottom padding on mobile screens so items don't hide behind the navbar tray
