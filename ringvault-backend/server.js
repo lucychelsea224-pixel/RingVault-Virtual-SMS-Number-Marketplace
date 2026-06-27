@@ -1,17 +1,24 @@
-// server.js (Backend on Render)
 import express from 'express';
 import cors from 'cors';
 import "dotenv/config";
 
-// 1. Import your actual route files from the routes folder
 import numbersRouter from './routes/numbers.js';
 import walletRouter from './routes/wallet.js';
 import webhookRouter from './routes/webhook.js';
 
 const app = express();
 
-// 2. Flexible CORS: Allows localhost, your specific pages dev domain, 
-// and dynamic subdomains/custom domains from Cloudflare.
+// 1. CAPTURE RAW BODY FOR WEBHOOKS (CRITICAL FOR PAYSTACK SECURITY)
+app.use(express.json({ 
+  verify: (req, res, buf) => {
+    // Only capture the raw buffer for the wallet webhook route
+    if (req.originalUrl.includes('/api/wallet/paystack-webhook')) {
+      req.rawBody = buf;
+    }
+  }
+}));
+
+// 2. CORS CONFIGURATION
 const allowedOrigins = [
   'http://localhost:3000',
   'https://ringvault-virtual-sms-number-marketplace.pages.dev'
@@ -19,8 +26,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl) 
-    // or if the origin matches our list or ends with .pages.dev
     if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.pages.dev')) {
       callback(null, true);
     } else {
@@ -30,15 +35,12 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
-
-// 3. Mount your routes under the /api prefix to match your frontend lib/api.ts
+// 3. MOUNT ROUTES
 app.use('/api', numbersRouter);
-app.use('/api/wallet', walletRouter); // if wallet.js endpoints don't contain '/wallet' inside them, use this.
+app.use('/api/wallet', walletRouter); 
 app.use('/api', webhookRouter);
 
-// Root route so opening the URL in a browser doesn't say "Cannot GET /"
-app.get('/', (res) => {
+app.get('/', (req, res) => {
   res.json({ status: "online", message: "RingVault API is fully functional" });
 });
 
