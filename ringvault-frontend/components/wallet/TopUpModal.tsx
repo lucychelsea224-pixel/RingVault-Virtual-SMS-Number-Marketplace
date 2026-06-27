@@ -6,15 +6,14 @@ const AMOUNTS = [5, 10, 20, 50, 100, 200]
 
 interface TopUpModalProps { 
   onClose: () => void; 
-  // Simplified: The modal only cares about the amount
-  onTopUp: (amount: number) => Promise<number> 
+  onTopUp: (amount: number) => Promise<any>; 
 }
 
 export function TopUpModal({ onClose, onTopUp }: TopUpModalProps) {
   const [selected, setSelected] = useState(10)
-  const [custom, setCustom]     = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [custom, setCustom] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const amount = custom ? parseFloat(custom) : selected
 
@@ -22,7 +21,6 @@ export function TopUpModal({ onClose, onTopUp }: TopUpModalProps) {
     if (!amount || amount < 1) return setError('Enter a valid amount')
     setLoading(true); setError('')
     try { 
-      // Only pass the amount to the parent's function
       await onTopUp(amount) 
       onClose() 
     }

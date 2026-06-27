@@ -1,61 +1,36 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
-// Ensure these are exported from your lib/api.ts
-import { getWalletBalance, getTransactions, verifyPayment } from '@/lib/api'
+import { useState, useEffect } from 'react'
 
-export function useWallet(token: string) {
-  const [balance, setBalance] = useState(0)
+export function useWallet(token: string | null) {
+  const [balance, setBalance] = useState<number>(0)
   const [transactions, setTransactions] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState<boolean>(false)
 
-  const refresh = useCallback(async () => {
-    if (!token) return
+  const topUp = async (amount: number, email: string, userId: string): Promise<any> => {
+    setLoading(true)
     try {
-      // These must match the exports in lib/api.ts
-      const [balanceData, transactionsData] = await Promise.all([
-        getWalletBalance(token), 
-        getTransactions(token)
-      ])
-      setBalance(balanceData.balance)
-      setTransactions(transactionsData.transactions)
-    } catch (err) {
-      console.error("Failed to refresh wallet:", err)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/wallet/topup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount, email, userId }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to initiate top up')
+      }
+      
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error(error)
+      throw error
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }
 
-  useEffect(() => { 
-    refresh() 
-  }, [refresh])
-
-  const topUp = useCallback(async (amountUSD: number, email: string) => {
-    return new Promise<number>((resolve, reject) => {
-      const paystack = (window as any).PaystackPop
-      if (typeof window === 'undefined' || !paystack) {
-        return reject(new Error('Paystack SDK not loaded'))
-      }
-
-      paystack.setup({
-        key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
-        email,
-        amount: Math.round(amountUSD * 1600 * 100), // Ensure this matches your rate logic
-        currency: 'NGN',
-        metadata: { usd_amount: amountUSD },
-        callback: async (response: any) => {
-          try {
-            const data = await verifyPayment(token, response.reference)
-            setBalance(data.balance)
-            refresh()
-            resolve(data.balance)
-          } catch (e) {
-            reject(e)
-          }
-        },
-        onClose: () => reject(new Error('Payment cancelled')),
-      }).openIframe()
-    })
-  }, [token, refresh])
-
-  return { balance, transactions, loading, refresh, topUp }
+  return { balance, transactions, loading, topUp }
 }

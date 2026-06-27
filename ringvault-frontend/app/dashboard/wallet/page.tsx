@@ -12,7 +12,6 @@ export default function WalletPage() {
 
   return (
     <div className="animate-[fadeSlide_0.3s_ease]">
-      {/* Wallet hero card */}
       <div className="relative overflow-hidden rounded-2xl p-7 mb-6 border border-[#2A3352]" style={{background:'linear-gradient(135deg,#1a2540,#0e1830)'}}>
         <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-[rgba(245,166,35,0.08)] pointer-events-none" />
         <div className="absolute -bottom-14 -left-8 w-40 h-40 rounded-full bg-[rgba(79,142,247,0.08)] pointer-events-none" />
@@ -27,7 +26,6 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* Transaction history */}
       <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-head font-bold text-[15px]">Transaction History</h2>
@@ -57,7 +55,10 @@ export default function WalletPage() {
       </div>
 
       {showTopUp && user && (
-        <TopUpModal onClose={() => setShowTopUp(false)} onTopUp={amt => topUp(amt, user.email!, user.id)} />
+        <TopUpModal 
+          onClose={() => setShowTopUp(false)} 
+          onTopUp={(amt: number) => topUp(amt, user.email!, user.id)} 
+        />
       )}
     </div>
   )

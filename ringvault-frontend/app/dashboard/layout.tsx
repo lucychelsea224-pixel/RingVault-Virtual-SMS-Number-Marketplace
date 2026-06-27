@@ -32,8 +32,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {showTopUp && (
         <TopUpModal 
           onClose={() => setShowTopUp(false)} 
-          // The modal receives 1 argument (amt), parent adds the rest (email/id)
-          onTopUp={(amt) => topUp(amt, user.email!, user.id)} 
+          onTopUp={(amt: number) => topUp(amt, user.email!, user.id)} 
         />
       )}
     </div>
