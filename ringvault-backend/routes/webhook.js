@@ -3,17 +3,14 @@ import { supabaseAdmin } from "../lib/supabase.js";
 
 const router = Router();
 
-// POST /api/webhook - Handles incoming SMS from Telnyx
 router.post("/webhook", async (req, res) => {
   try {
-    // In Express, req.body is already parsed into a JavaScript object
     const json = req.body;
     
     if (!json || !json.data || !json.data.payload) {
       return res.status(400).json({ success: false, error: "Invalid Telnyx payload" });
     }
 
-    // Extract SMS info from Telnyx payload
     const { payload } = json.data;
     
     if (!payload.to || payload.to.length === 0) {
@@ -22,7 +19,6 @@ router.post("/webhook", async (req, res) => {
 
     const toNumber = payload.to[0].phone_number;
 
-    // Lookup user owner
     const { data: owner } = await supabaseAdmin
       .from("user_numbers")
       .select("user_id, id")
@@ -45,9 +41,7 @@ router.post("/webhook", async (req, res) => {
       }
     }
 
-    // Webhooks MUST return a 200 OK status quickly
     return res.status(200).send("OK");
-
   } catch (error) {
     console.error("❌ Global Webhook Handler Exception:", error.message || error);
     return res.status(500).json({ success: false, error: "Internal Server Error" });

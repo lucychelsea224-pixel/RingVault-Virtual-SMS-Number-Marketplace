@@ -1,4 +1,3 @@
-// routes/wallet.js
 import { Router } from "express";
 import crypto from "crypto";
 import { requireAuth } from "../middleware/auth.js";
@@ -6,7 +5,7 @@ import { supabaseAdmin } from "../lib/supabase.js";
 
 const router = Router();
 
-// ─── POST /api/wallet/verify-payment ─────────────────────────────────────────
+// POST /api/wallet/verify-payment
 router.post("/verify-payment", requireAuth, async (req, res) => {
   const { reference } = req.body;
   const userId = req.user.id;
@@ -15,12 +14,11 @@ router.post("/verify-payment", requireAuth, async (req, res) => {
     return res.status(400).json({ success: false, error: "reference is required" });
   }
 
-  // Check if this reference has already been processed (idempotency)
   const { data: existingTx } = await supabaseAdmin
     .from("transactions")
     .select("id")
     .eq("paystack_reference", reference)
-    .maybeSingle(); // Using maybeSingle prevents throwing an error row if it doesn't exist
+    .maybeSingle();
 
   if (existingTx) {
     return res.status(409).json({
@@ -29,7 +27,6 @@ router.post("/verify-payment", requireAuth, async (req, res) => {
     });
   }
 
-  // Verify with Paystack
   let paystackData;
   try {
     const verifyRes = await fetch(
@@ -55,7 +52,6 @@ router.post("/verify-payment", requireAuth, async (req, res) => {
     return res.status(502).json({ success: false, error: "Could not reach Paystack." });
   }
 
-  // Convert or pull currency units safely
   const usdAmount =
     paystackData.metadata?.usd_amount ||
     paystackData.amount / 100;
@@ -64,7 +60,6 @@ router.post("/verify-payment", requireAuth, async (req, res) => {
     return res.status(400).json({ success: false, error: "Invalid amount." });
   }
 
-  // Credit the wallet (atomic RPC)
   const { data: creditResult, error: creditError } = await supabaseAdmin.rpc(
     "credit_balance",
     { p_user_id: userId, p_amount: usdAmount }
@@ -77,7 +72,6 @@ router.post("/verify-payment", requireAuth, async (req, res) => {
       .json({ success: false, error: "Failed to credit wallet." });
   }
 
-  // Log the transaction
   await supabaseAdmin.from("transactions").insert({
     user_id: userId,
     type: "credit",
@@ -93,7 +87,7 @@ router.post("/verify-payment", requireAuth, async (req, res) => {
   });
 });
 
-// ─── POST /api/wallet/paystack-webhook ─────────────────────────────────────────
+// POST /api/wallet/paystack-webhook
 router.post("/paystack-webhook", async (req, res) => {
   const hash = crypto
     .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
@@ -105,15 +99,13 @@ router.post("/paystack-webhook", async (req, res) => {
   }
 
   const { event, data } = req.body;
-
   if (event === "charge.success") {
     console.log("[paystack-webhook] charge.success:", data.reference);
   }
-
   return res.sendStatus(200);
 });
 
-// ─── GET /api/wallet/balance ──────────────────────────────────────────────────
+// GET /api/wallet/balance
 router.get("/balance", requireAuth, async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from("profiles")
@@ -124,11 +116,10 @@ router.get("/balance", requireAuth, async (req, res) => {
   if (error) {
     return res.status(500).json({ success: false, error: error.message });
   }
-
   return res.json({ success: true, balance: data.balance });
 });
 
-// ─── GET /api/wallet/transactions ────────────────────────────────────────────
+// GET /api/wallet/transactions
 router.get("/transactions", requireAuth, async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from("transactions")
@@ -140,7 +131,6 @@ router.get("/transactions", requireAuth, async (req, res) => {
   if (error) {
     return res.status(500).json({ success: false, error: error.message });
   }
-
   return res.json({ success: true, transactions: data });
 });
 
