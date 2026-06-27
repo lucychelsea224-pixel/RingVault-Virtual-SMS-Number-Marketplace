@@ -4,7 +4,7 @@ import { clsx } from 'clsx'
 
 interface SMSLog {
   id: string;
-  service_name?: string;
+  service_name?: string | null; // Fixed: Now allows null to perfectly match hook profiles
   to_number: string;
   body: string;
   otp_code?: string;
@@ -25,12 +25,10 @@ export function SMSItem({ msg }: { msg: SMSLog }) {
   }, [])
 
   const icon = SERVICE_ICONS[msg.service_name?.toLowerCase() ?? ''] ?? '📩'
-  
-  // Safe formatting target strings
   const formattedTime = mounted ? new Date(msg.received_at).toLocaleTimeString() : ''
 
   return (
-    <div className={clsx('flex gap-4 p-4 rounded-xl border transition-all', msg.isNew ? 'border-[#F5A623] bg-[rgba(245,166,35,0.05)] animate-[smsIn_0.4s_ease]' : 'border-[#2A3352] bg-[#1C2236]')}>
+    <div className={clsx('flex gap-4 p-4 rounded-xl border transition-all', msg.isNew ? 'border-[#F5A623] bg-[rgba(245,166,35,0.05)]' : 'border-[#2A3352] bg-[#1C2236]')}>
       <div className="w-10 h-10 rounded-xl bg-[rgba(79,142,247,0.12)] border border-[rgba(79,142,247,0.2)] grid place-items-center text-lg flex-shrink-0">{icon}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
