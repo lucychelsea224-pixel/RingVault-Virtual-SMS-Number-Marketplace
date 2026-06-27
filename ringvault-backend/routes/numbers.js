@@ -15,6 +15,36 @@ const createFormData = (data) => {
 };
 
 // =========================================================================
+// NEW ENDPOINT: FETCH NUMBERS HISTORY (SHORT-TERM & LONG-TERM RENTALS)
+// =========================================================================
+router.get('/my-numbers', async (req, res) => {
+  try {
+    const user = await getUser(req);
+    if (!user) {
+      return res.status(401).json({ success: false, error: "Unauthorized access" });
+    }
+
+    // 🌟 THE FIX: Fetching rows including both regular 'active' and multi-day 'rental_active' statuses
+    const { data: numbers, error } = await supabaseAdmin
+      .from('user_numbers')
+      .select('*')
+      .eq('user_id', user.id)
+      .in('status', ['active', 'rental_active', 'completed', 'pending', 'expired'])
+      .order('created_at', { ascending: false }); // Newest orders on top!
+
+    if (error) {
+      console.error("❌ Supabase fetch error inside /my-numbers:", error.message);
+      throw error;
+    }
+
+    return res.status(200).json({ success: true, numbers: numbers || [] });
+  } catch (err) {
+    console.error("❌ Route Failure on /my-numbers:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to load your numbers history." });
+  }
+});
+
+// =========================================================================
 // ENDPOINT 1: SHORT-TERM ACTIVATIONS (DYNAMIC COST + $1.50 PROFIT MARGIN)
 // =========================================================================
 router.post('/buy-number', async (req, res) => {
@@ -27,9 +57,8 @@ router.post('/buy-number', async (req, res) => {
 
     const sanitizedService = service_name.toLowerCase();
     let targetCountryId = '1'; 
-    let baseVendorCost = 0.50; // Safety baseline fallback if the pricing API drops
+    let baseVendorCost = 0.50; 
 
-    // 🌟 LIVE PRICING FETCH: Find the exact current lowest cost for this service
     try {
       const ratesResponse = await axios.post(
         'https://api.smspool.net/request/success_rate',
@@ -49,17 +78,14 @@ router.post('/buy-number', async (req, res) => {
       console.warn("Pricing calculation fell back to baseline margins:", ratesErr.message);
     }
 
-    // Explicit country override if selected via UI state code
     if (state_code) {
       const dialMap = { "1": "1", "44": "2", "31": "3", "49": "8", "33": "17", "91": "22" };
       const cleanDialCode = state_code.toString().replace('+', '').trim();
       if (dialMap[cleanDialCode]) targetCountryId = dialMap[cleanDialCode];
     }
 
-    // 🌟 UNPREDICTABLE PRICE FIX: Base cost + a flat $1.50 RingVault profit markup
     const RETAIL_PRICE = baseVendorCost + 1.50;
 
-    // Secure local balance reservation
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: RETAIL_PRICE,
@@ -77,7 +103,7 @@ router.post('/buy-number', async (req, res) => {
           key: process.env.SMSPOOL_API_KEY,
           country: targetCountryId, 
           service: sanitizedService,
-          pricing_option: '1' // Force premium clean un-recycled pool tier
+          pricing_option: '1' 
         }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
@@ -94,7 +120,6 @@ router.post('/buy-number', async (req, res) => {
 
       return res.status(200).json({ success: true, phone_number: assignedMobileNo, session_id: orderId });
     } catch (apiError) {
-      // Automatic reversal if the third-party carrier pool is dry
       await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: RETAIL_PRICE });
       return res.status(502).json({ success: false, error: "Mobile line out of stock. Wallet balance auto-refunded." });
     }
@@ -119,7 +144,6 @@ router.post('/rent-number', async (req, res) => {
     const days = parseInt(duration_days) || 1;
     let baseRentalCost = 2.50; 
 
-    // Fetch live rental prices from SMSPool
     try {
       const pricingRes = await axios.post(
         'https://api.smspool.net/purchase/rental_price',
@@ -131,7 +155,6 @@ router.post('/rent-number', async (req, res) => {
       console.warn("Could not load dynamic live rental prices:", e.message);
     }
 
-    // 🌟 LONG-TERM MATCHING FORMULA: Dynamic base rate + flat $1.50 retail profit margin
     const TOTAL_RENTAL_RETAIL = baseRentalCost + 1.50;
 
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
@@ -175,7 +198,9 @@ router.post('/rent-number', async (req, res) => {
   }
 });
 
-// Polling loop system
+// =========================================================================
+// POLLING LOOP SYSTEM
+// =========================================================================
 router.get('/check-otp/:session_id', async (req, res) => {
   try {
     const { session_id } = req.params;
