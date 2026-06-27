@@ -1,13 +1,34 @@
+'use client'
+import { useState, useEffect } from 'react'
 import { clsx } from 'clsx'
-import type { SMSLog } from '@/hooks/useRealtimeSMS'
+
+interface SMSLog {
+  id: string;
+  service_name?: string;
+  to_number: string;
+  body: string;
+  otp_code?: string;
+  received_at: string;
+  isNew?: boolean;
+}
 
 const SERVICE_ICONS: Record<string, string> = {
   whatsapp: '💬', facebook: '📘', telegram: '✈️', google: '🔵',
-  instagram: '📷', twitter: '🐦', tiktok: '🎵', uber: '⚫', Unknown: '📩',
+  instagram: '📷', twitter: '🐦', tiktok: '🎵', uber: '⚫', unknown: '📩',
 }
 
 export function SMSItem({ msg }: { msg: SMSLog }) {
+  const [mounted, setMounted] = useState(false)
+  
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const icon = SERVICE_ICONS[msg.service_name?.toLowerCase() ?? ''] ?? '📩'
+  
+  // Safe formatting target strings
+  const formattedTime = mounted ? new Date(msg.received_at).toLocaleTimeString() : ''
+
   return (
     <div className={clsx('flex gap-4 p-4 rounded-xl border transition-all', msg.isNew ? 'border-[#F5A623] bg-[rgba(245,166,35,0.05)] animate-[smsIn_0.4s_ease]' : 'border-[#2A3352] bg-[#1C2236]')}>
       <div className="w-10 h-10 rounded-xl bg-[rgba(79,142,247,0.12)] border border-[rgba(79,142,247,0.2)] grid place-items-center text-lg flex-shrink-0">{icon}</div>
@@ -17,7 +38,7 @@ export function SMSItem({ msg }: { msg: SMSLog }) {
             <span className="text-[13px] font-semibold text-[#8B92B0]">{msg.service_name ?? 'Unknown'}</span>
             {msg.isNew && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgba(245,166,35,0.15)] text-[#F5A623]">NEW</span>}
           </div>
-          <span className="text-[11px] text-[#5A6280] whitespace-nowrap">{new Date(msg.received_at).toLocaleTimeString()}</span>
+          <span className="text-[11px] text-[#5A6280] whitespace-nowrap">{formattedTime}</span>
         </div>
         <div className="text-[11px] text-[#5A6280]">→ {msg.to_number}</div>
         <div className="text-[13px] mt-1">{msg.body}</div>

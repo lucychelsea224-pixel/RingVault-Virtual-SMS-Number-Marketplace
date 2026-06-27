@@ -18,13 +18,17 @@ export default function DashboardPage() {
   const { messages, isConnected } = useRealtimeSMS(user?.id)
   const [numbers, setNumbers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (!token) return
     setLoading(true)
     getMyNumbers(token)
       .then(d => {
-        // Fallback to empty array if response numbers payload container is missing
         setNumbers(d?.numbers || d || [])
       })
       .catch((err) => {
@@ -33,7 +37,7 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [token])
 
-  const totalSpent = transactions.filter(t => t.type === 'debit').reduce((a: number, t: any) => a + t.amount, 0)
+  const totalSpent = transactions?.filter(t => t.type === 'debit').reduce((a: number, t: any) => a + t.amount, 0) || 0
 
   const handleRelease = async (id: string) => {
     try {
@@ -46,17 +50,15 @@ export default function DashboardPage() {
 
   return (
     <div className="animate-[fadeSlide_0.3s_ease] px-2 sm:px-4">
-      {/* Stats - Stacks on mobile, splits into 2 columns on tablet, 4 on desktop */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard icon="📱" value={String(numbers.length)} label="Active Numbers" change={`${numbers.length} total`} up />
-        <StatCard icon="✉"  value={String(messages.length)} label="SMS Received"  change="Live" up />
-        <StatCard icon="◈"  value={`$${balance.toFixed(2)}`} label="Wallet Balance" change="Available" up />
+        <StatCard icon="✉"  value={String(messages?.length || 0)} label="SMS Received"  change="Live" up />
+        <StatCard icon="◈"  value={`$${(balance || 0).toFixed(2)}`} label="Wallet Balance" change="Available" up />
         <StatCard icon="💸" value={`$${totalSpent.toFixed(2)}`} label="Total Spent" change="this month" up={false} />
       </div>
 
-      {/* Main Blocks - Stacks vertically on mobile, side-by-side on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* My Numbers */}
+        {/* My Numbers Block */}
         <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-4 sm:p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -77,7 +79,6 @@ export default function DashboardPage() {
               <p className="text-[13px]">Buy your first number to get started</p>
             </div>
           ) : (
-            /* Added overflow horizontal scrolling wrapper to keep tables from breaking layout */
             <div className="w-full overflow-x-auto scrollbar-thin">
               <table className="w-full min-w-[450px]">
                 <thead>
@@ -90,16 +91,16 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {numbers.map(n => {
-                    // Normalize standard 'active' alongside custom multi-day rental status markers
                     const isLineLive = n.status === 'active' || n.status === 'rental_active';
+                    const expirationLabel = mounted && n.expires_at 
+                      ? `Expires ${new Date(n.expires_at).toLocaleDateString()}` 
+                      : 'One-time Session';
                     
                     return (
                       <tr key={n.id || n.telnyx_number_id} className="border-t border-[#2A3352] hover:bg-[#1C2236] transition-colors">
                         <td className="py-3 pr-3">
                           <div className="font-head font-bold text-[13px] whitespace-nowrap">{n.phone_number}</div>
-                          <div className="text-[11px] text-[#5A6280] whitespace-nowrap">
-                            {n.expires_at ? `Expires ${new Date(n.expires_at).toLocaleDateString()}` : 'One-time Session'}
-                          </div>
+                          <div className="text-[11px] text-[#5A6280] whitespace-nowrap">{expirationLabel}</div>
                         </td>
                         <td className="py-3 pr-3 text-[13px] uppercase">{n.country_code || n.state_code || 'any'}</td>
                         <td className="py-3 pr-3">
@@ -122,7 +123,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Recent SMS */}
+        {/* Recent SMS Block */}
         <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-4 sm:p-5">
           <div className="flex items-center justify-between mb-4 gap-2">
             <div>
@@ -135,8 +136,8 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            {messages.slice(0, 4).map(m => <SMSItem key={m.id} msg={m} />)}
-            {messages.length === 0 && (
+            {messages?.slice(0, 4).map((m: any) => <SMSItem key={m.id} msg={m} />)}
+            {(!messages || messages.length === 0) && (
               <div className="text-center py-8 text-[#5A6280]">
                 <div className="text-3xl mb-2 opacity-60">📭</div>
                 <p>No messages yet</p>
