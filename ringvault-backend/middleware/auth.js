@@ -2,7 +2,7 @@
 // Express middleware that validates a Supabase Bearer token and
 // attaches the decoded user to req.user.
 
-import { getUserFromToken } from "../lib/supabase.js";
+import { getUser } from "../lib/supabase.js"; // Match the exact function name from lib/supabase.js
 
 /**
  * requireAuth middleware
@@ -10,7 +10,17 @@ import { getUserFromToken } from "../lib/supabase.js";
  */
 export async function requireAuth(req, res, next) {
   try {
-    const user = await getUserFromToken(req.headers.authorization);
+    // Pass the entire req object to getUser, which handles extracting the token
+    const user = await getUser(req);
+    
+    // If token is missing, invalid, or expired, stop the request here
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized: Invalid or missing token",
+      });
+    }
+
     req.user = user; // { id, email, ... }
     next();
   } catch (err) {
