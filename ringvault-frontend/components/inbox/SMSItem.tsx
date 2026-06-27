@@ -4,10 +4,10 @@ import { clsx } from 'clsx'
 
 interface SMSLog {
   id: string;
-  service_name?: string | null; // Fixed: Now allows null to perfectly match hook profiles
+  service_name?: string | null; // Safe for null
   to_number: string;
   body: string;
-  otp_code?: string;
+  otp_code?: string | null;     // Fixed: Added | null to resolve the build error!
   received_at: string;
   isNew?: boolean;
 }
