@@ -17,17 +17,31 @@ export default function DashboardPage() {
   const { balance, transactions } = useWallet(token)
   const { messages, isConnected } = useRealtimeSMS(user?.id)
   const [numbers, setNumbers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!token) return
-    getMyNumbers(token).then(d => setNumbers(d.numbers)).catch(() => {})
+    setLoading(true)
+    getMyNumbers(token)
+      .then(d => {
+        // Fallback to empty array if response numbers payload container is missing
+        setNumbers(d?.numbers || d || [])
+      })
+      .catch((err) => {
+        console.error("Failed to parse operational number history state:", err)
+      })
+      .finally(() => setLoading(false))
   }, [token])
 
   const totalSpent = transactions.filter(t => t.type === 'debit').reduce((a: number, t: any) => a + t.amount, 0)
 
   const handleRelease = async (id: string) => {
-    await releaseNumber(token, id)
-    setNumbers(prev => prev.filter(n => n.id !== id))
+    try {
+      await releaseNumber(token, id)
+      setNumbers(prev => prev.filter(n => n.id !== id))
+    } catch (err) {
+      console.error("Failed to execute line release:", err)
+    }
   }
 
   return (
@@ -51,7 +65,12 @@ export default function DashboardPage() {
             </div>
             <Link href="/dashboard/buy"><Button variant="accent" size="sm">+ Buy</Button></Link>
           </div>
-          {numbers.length === 0 ? (
+          
+          {loading ? (
+            <div className="flex justify-center py-10 text-xs text-[#5A6280] tracking-wide animate-pulse">
+              Syncing dynamic line registry parameters...
+            </div>
+          ) : numbers.length === 0 ? (
             <div className="flex flex-col items-center py-10 text-[#5A6280]">
               <span className="text-4xl mb-3 opacity-60">📵</span>
               <p className="font-head font-bold text-[#8B92B0] mb-1">No numbers yet</p>
@@ -70,24 +89,33 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {numbers.map(n => (
-                    <tr key={n.id} className="border-t border-[#2A3352] hover:bg-[#1C2236] transition-colors">
-                      <td className="py-3 pr-3">
-                        <div className="font-head font-bold text-[13px] whitespace-nowrap">{n.phone_number}</div>
-                        <div className="text-[11px] text-[#5A6280] whitespace-nowrap">{n.expires_at ? `Expires ${new Date(n.expires_at).toLocaleDateString()}` : ''}</div>
-                      </td>
-                      <td className="py-3 pr-3 text-[13px]">{n.country_code}</td>
-                      <td className="py-3 pr-3">
-                        <Badge color={n.status === 'active' ? 'green' : 'accent'}>
-                          {n.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-[#22C67A] animate-pulse" />}
-                          {n.status}
-                        </Badge>
-                      </td>
-                      <td className="py-3 text-right">
-                        <Button variant="danger" size="sm" onClick={() => handleRelease(n.id)}>Release</Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {numbers.map(n => {
+                    // Normalize standard 'active' alongside custom multi-day rental status markers
+                    const isLineLive = n.status === 'active' || n.status === 'rental_active';
+                    
+                    return (
+                      <tr key={n.id || n.telnyx_number_id} className="border-t border-[#2A3352] hover:bg-[#1C2236] transition-colors">
+                        <td className="py-3 pr-3">
+                          <div className="font-head font-bold text-[13px] whitespace-nowrap">{n.phone_number}</div>
+                          <div className="text-[11px] text-[#5A6280] whitespace-nowrap">
+                            {n.expires_at ? `Expires ${new Date(n.expires_at).toLocaleDateString()}` : 'One-time Session'}
+                          </div>
+                        </td>
+                        <td className="py-3 pr-3 text-[13px] uppercase">{n.country_code || n.state_code || 'any'}</td>
+                        <td className="py-3 pr-3">
+                          <Badge color={isLineLive ? 'green' : 'accent'}>
+                            {isLineLive && <span className="w-1.5 h-1.5 rounded-full bg-[#22C67A] animate-pulse" />}
+                            <span className="capitalize">{n.status?.replace('_', ' ')}</span>
+                          </Badge>
+                        </td>
+                        <td className="py-3 text-right">
+                          <Button variant="danger" size="sm" onClick={() => handleRelease(n.id || n.telnyx_number_id)}>
+                            Release
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
