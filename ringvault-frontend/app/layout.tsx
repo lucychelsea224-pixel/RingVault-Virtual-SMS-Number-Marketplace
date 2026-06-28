@@ -1,22 +1,20 @@
-'use client'
-import { Sidebar } from '@/components/dashboard/Sidebar'
-import { useSession } from '@/hooks/useSession'
+import type { Metadata } from 'next'
+import './globals.css'
+import { ThemeProvider } from '@/components/ui/ThemeProvider'
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  // Safe destructure with a fallback empty object
-  const session = useSession() || {}
-  const user = session.user || null
+export const metadata: Metadata = {
+  title: 'RingVault – Virtual SMS Number Marketplace',
+  description: 'Buy USA and international virtual numbers for SMS/OTP verification.',
+}
 
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#0D111A] text-white">
-      {/* Pass the user safely. If null, Sidebar's fallbacks will kick in without crashing */}
-      <Sidebar user={user} />
-      
-      <main className="flex-1 p-4 sm:p-6 md:p-8 pb-20 md:pb-8 overflow-y-auto">
-        <div className="max-w-7xl mx-auto w-full">
+    <html lang="en">
+      <body className="bg-[#0B0E17] text-white antialiased">
+        <ThemeProvider>
           {children}
-        </div>
-      </main>
-    </div>
+        </ThemeProvider>
+      </body>
+    </html>
   )
 }
