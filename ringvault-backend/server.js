@@ -1,30 +1,30 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import 'dotenv/config';
 
-import authRouter from './routes/auth.js';
-import walletRouter from './routes/wallet.js';
 import numbersRouter from './routes/numbers.js';
+import walletRouter from './routes/wallet.js';
 import webhookRouter from './routes/webhook.js';
-
-dotenv.config();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+app.use(cors({ origin: true, credentials: true }));
 
-app.get('/', (req, res) => {
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    if (req.originalUrl === '/api/wallet/paystack-webhook') {
+      req.rawBody = buf;
+    }
+  }
+}));
+
+app.get('/', (_req, res) => {
   res.json({ status: 'ok', message: 'RingVault API is operational' });
 });
 
-// Mounted Routes
-app.use('/api/auth', authRouter);
+app.use('/api', numbersRouter);
 app.use('/api/wallet', walletRouter);
-app.use('/api/numbers', numbersRouter);
-app.use('/api/webhook', webhookRouter);
+app.use('/api', webhookRouter);
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, '0.0.0.0', () => console.log(`✅ RingVault API online at port ${PORT}`));

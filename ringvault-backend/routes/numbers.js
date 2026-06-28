@@ -14,9 +14,6 @@ const createFormData = (data) => {
   return params;
 };
 
-// =========================================================================
-// ENDPOINT 1: FETCH NUMBERS HISTORY (SHORT-TERM & LONG-TERM RENTALS)
-// =========================================================================
 router.get('/my-numbers', async (req, res) => {
   try {
     const user = await getUser(req);
@@ -36,20 +33,17 @@ router.get('/my-numbers', async (req, res) => {
   }
 });
 
-// =========================================================================
-// ENDPOINT 2: SHORT-TERM ACTIVATIONS (SECURED BALANCE GATEKEEPER)
-// =========================================================================
 router.post('/buy-number', async (req, res) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ success: false, error: "Unauthorized access" });
 
-    const { service_name, state_code } = req.body; 
+    const { service_name, state_code } = req.body;
     if (!service_name) return res.status(400).json({ success: false, error: "Service name required." });
 
     const sanitizedService = service_name.toLowerCase();
-    let targetCountryId = '1'; 
-    let baseVendorCost = 0.50; 
+    let targetCountryId = '1';
+    const baseVendorCost = 0.50;
 
     if (state_code) {
       const dialMap = { "1": "1", "44": "2", "31": "3", "49": "8", "33": "17", "91": "22", "57": "50" };
@@ -59,7 +53,6 @@ router.post('/buy-number', async (req, res) => {
 
     const RETAIL_PRICE = baseVendorCost + 1.50;
 
-    // 🛑 HARD STOP: Atomically deduct balance before reaching SMSPool
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: RETAIL_PRICE,
@@ -72,21 +65,30 @@ router.post('/buy-number', async (req, res) => {
 
     try {
       const response = await axios.post(
-        'https://api.smspool.net/purchase/sms', 
+        'https://api.smspool.net/purchase/sms',
         createFormData({ key: process.env.SMSPOOL_API_KEY, country: targetCountryId, service: sanitizedService, pricing_option: '1' }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      if (response.data.success !== 1 && response.data.success !== true) throw new Error();
+      if (response.data.success !== 1 && response.data.success !== true) throw new Error("SMSPool rejected");
 
       const { data: insertedRow, error: insertErr } = await supabaseAdmin.from("user_numbers").insert({
-        user_id: user.id, phone_number: response.data.number, telnyx_number_id: response.data.order_id.toString(),
-        country_code: state_code || "1", status: "active", expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+        user_id: user.id,
+        phone_number: response.data.number,
+        telnyx_number_id: response.data.order_id.toString(),
+        country_code: state_code || "1",
+        status: "active",
+        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
       }).select().single();
 
       if (insertErr) throw insertErr;
 
-      return res.status(200).json({ success: true, phone_number: response.data.number, session_id: response.data.order_id, number_id: insertedRow.id });
+      return res.status(200).json({
+        success: true,
+        phone_number: response.data.number,
+        session_id: response.data.order_id,
+        number_id: insertedRow.id
+      });
     } catch (apiError) {
       await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: RETAIL_PRICE });
       return res.status(502).json({ success: false, error: "Carrier pool dry. Wallet auto-refunded." });
@@ -96,9 +98,6 @@ router.post('/buy-number', async (req, res) => {
   }
 });
 
-// =========================================================================
-// ENDPOINT 3: LONG-TERM RENTALS (SECURED BALANCE GATEKEEPER)
-// =========================================================================
 router.post('/rent-number', async (req, res) => {
   try {
     const user = await getUser(req);
@@ -106,11 +105,12 @@ router.post('/rent-number', async (req, res) => {
 
     const { service_name, duration_days, state_code } = req.body;
     const days = parseInt(duration_days) || 1;
-    const TOTAL_RENTAL_RETAIL = 4.00; // Base rate + profit margin
+    const TOTAL_RENTAL_RETAIL = 4.00;
 
-    // 🛑 HARD STOP: Atomically deduct balance before reaching SMSPool
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
-      p_user_id: user.id, p_amount: TOTAL_RENTAL_RETAIL, p_description: `Rental ${service_name}`
+      p_user_id: user.id,
+      p_amount: TOTAL_RENTAL_RETAIL,
+      p_description: `Rental ${service_name}`
     });
 
     if (balanceError || !balanceCheck || balanceCheck.ok === false) {
@@ -124,11 +124,15 @@ router.post('/rent-number', async (req, res) => {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      if (!response.data.success) throw new Error();
+      if (!response.data.success) throw new Error("SMSPool rental rejected");
 
       const { data: insertedRow, error: insertErr } = await supabaseAdmin.from("user_numbers").insert({
-        user_id: user.id, phone_number: response.data.number, telnyx_number_id: response.data.rental_id.toString(),
-        country_code: state_code || "1", status: "rental_active", expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+        user_id: user.id,
+        phone_number: response.data.number,
+        telnyx_number_id: response.data.rental_id.toString(),
+        country_code: state_code || "1",
+        status: "rental_active",
+        expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
       }).select().single();
 
       if (insertErr) throw insertErr;
@@ -143,11 +147,6 @@ router.post('/rent-number', async (req, res) => {
   }
 });
 
-// =========================================================================
-// ENDPOINT: RESEND CODE — charges a small fee and asks SMSPool to resend
-// an SMS to a number the user already owns. Refunds automatically if the
-// upstream request fails.
-// =========================================================================
 router.post('/resend-code', async (req, res) => {
   try {
     const user = await getUser(req);
@@ -167,12 +166,11 @@ router.post('/resend-code', async (req, res) => {
       return res.status(404).json({ success: false, error: "Number not found on your account." });
     }
     if (!['active', 'rental_active'].includes(numberRow.status)) {
-      return res.status(400).json({ success: false, error: "This number is no longer active, so a resend can't be requested." });
+      return res.status(400).json({ success: false, error: "This number is no longer active." });
     }
 
-    const RESEND_FEE = 0.75; // flat fee — adjust to match your real SMSPool resend cost
+    const RESEND_FEE = 0.75;
 
-    // 🛑 Charge the resend fee atomically before contacting SMSPool
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: RESEND_FEE,
@@ -180,7 +178,7 @@ router.post('/resend-code', async (req, res) => {
     });
 
     if (balanceError || !balanceCheck || balanceCheck.ok === false) {
-      return res.status(402).json({ success: false, error: "Insufficient RingVault wallet balance to request a resend." });
+      return res.status(402).json({ success: false, error: "Insufficient balance for resend." });
     }
 
     try {
@@ -192,29 +190,21 @@ router.post('/resend-code', async (req, res) => {
 
       if (response.data.success !== 1 && response.data.success !== true) throw new Error();
 
-      return res.status(200).json({
-        success: true,
-        session_id: numberRow.telnyx_number_id,
-        message: "Resend requested — watch your inbox for the new code."
-      });
+      return res.status(200).json({ success: true, session_id: numberRow.telnyx_number_id, message: "Resend requested." });
     } catch (apiError) {
-      // Upstream resend failed — refund the fee
       await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: RESEND_FEE });
-      return res.status(502).json({ success: false, error: "Resend request failed upstream. Wallet auto-refunded." });
+      return res.status(502).json({ success: false, error: "Resend failed upstream. Wallet auto-refunded." });
     }
   } catch (err) {
     return res.status(500).json({ success: false, error: "Internal resend error." });
   }
 });
 
-// =========================================================================
-// ENDPOINT 4: POLLING SYNC & REALTIME SMS NOTIFICATION GENERATION
-// =========================================================================
 router.get('/check-otp/:session_id', async (req, res) => {
   try {
     const { session_id } = req.params;
     const response = await axios.post(
-      'https://api.smspool.net/sms/check', 
+      'https://api.smspool.net/sms/check',
       createFormData({ key: process.env.SMSPOOL_API_KEY, orderid: session_id }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
