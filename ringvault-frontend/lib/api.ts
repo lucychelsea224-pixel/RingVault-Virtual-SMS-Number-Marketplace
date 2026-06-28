@@ -25,7 +25,7 @@ async function authFetch(path: string, token: string, opts: RequestInit = {}) {
   }
 
   const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Request failed');
+  if (!data.success) throw new Error(data.error || data.message || 'Request failed');
   return data;
 }
 
@@ -51,6 +51,9 @@ export const getWalletBalance = (token: string) =>
 
 export const getTransactions = (token: string) => 
   authFetch('/api/wallet/transactions', token);
+
+export const getExchangeRate = (token: string, currency: string) =>
+  authFetch(`/api/wallet/get-rate/${currency}`, token);
 
 export const verifyPayment = (token: string, reference: string) => 
   authFetch('/api/wallet/verify-payment', token, {

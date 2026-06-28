@@ -3,6 +3,7 @@ import cors from 'cors';
 import "dotenv/config";
 import numbersRouter from './routes/numbers.js';
 import walletRouter from './routes/wallet.js';
+import webhookRouter from './routes/webhook.js';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(cors({ origin: true, credentials: true }));
 
 app.use('/api', numbersRouter);
 app.use('/api/wallet', walletRouter);
+app.use('/api', webhookRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, '0.0.0.0', () => console.log(`✅ Server online at ${PORT}`));

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { usePaystackPayment } from 'react-paystack'
+import { getExchangeRate, verifyPayment } from '@/lib/api'
 
 const AMOUNTS = [5, 10, 20, 50, 100, 200]
 const CURRENCIES = [
@@ -15,10 +16,11 @@ interface TopUpModalProps {
   onClose: () => void; 
   email: string;
   userId: string;
+  token: string;
   onSuccessRefresh: () => void;
 }
 
-export function TopUpModal({ onClose, email, userId, onSuccessRefresh }: TopUpModalProps) {
+export function TopUpModal({ onClose, email, userId, token, onSuccessRefresh }: TopUpModalProps) {
   const [selectedUsd, setSelectedUsd] = useState(10)
   const [customUsd, setCustomUsd] = useState('')
   const [currency, setCurrency] = useState('NGN')
@@ -36,17 +38,17 @@ export function TopUpModal({ onClose, email, userId, onSuccessRefresh }: TopUpMo
     }
     const fetchRate = async () => {
       try {
-        const res = await fetch(`/api/wallet/get-rate/${currency}`)
-        const data = await res.json()
+        const data = await getExchangeRate(token, currency)
         if (data.success && data.rate) {
           setExchangeRate(data.rate)
         }
       } catch (err) {
         console.error("Failed fetching live rate:", err)
+        setError('Could not load exchange rate. Using last known rate.')
       }
     }
     fetchRate()
-  }, [currency])
+  }, [currency, token])
 
   const config = {
     reference: `rv_${Math.floor(Math.random() * 1000000000)}_${Date.now()}`,
@@ -72,25 +74,12 @@ export function TopUpModal({ onClose, email, userId, onSuccessRefresh }: TopUpMo
       onSuccess: async (response: any) => {
         setLoading(true)
         try {
-          const verifyRes = await fetch('/api/wallet/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              reference: response.reference,
-              userId: userId,
-              usdAmount: usdAmount
-            })
-          })
-          const verifyData = await verifyRes.json()
-          if (verifyData.success) {
-            onSuccessRefresh()
-            onClose()
-          } else {
-            setError(verifyData.message || 'Verification failed.')
-          }
-        } catch (err) {
+          await verifyPayment(token, response.reference)
+          onSuccessRefresh()
+          onClose()
+        } catch (err: any) {
           console.error("Verification error:", err)
-          setError('Server error verifying transaction.')
+          setError(err?.message || 'Server error verifying transaction.')
         } finally {
           setLoading(false)
         }
@@ -110,7 +99,6 @@ export function TopUpModal({ onClose, email, userId, onSuccessRefresh }: TopUpMo
         
         {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg mb-4">{error}</div>}
 
-        {/* Currency Selection */}
         <div className="mb-4">
           <label className="block text-[11px] font-semibold text-[#8B92B0] uppercase tracking-wide mb-1.5">Payment Currency</label>
           <select value={currency} onChange={e => setCurrency(e.target.value)} className="w-full bg-[#1C2236] border border-[#2A3352] rounded-lg px-4 py-2.5 text-sm outline-none text-[#EEF0F8]">
@@ -118,7 +106,6 @@ export function TopUpModal({ onClose, email, userId, onSuccessRefresh }: TopUpMo
           </select>
         </div>
 
-        {/* Amount Chips Grid */}
         <div className="grid grid-cols-3 gap-2 mb-4">
           {AMOUNTS.map(amt => (
             <button key={amt} type="button" onClick={() => { setSelectedUsd(amt); setCustomUsd(''); }} className={`py-2 text-xs font-semibold rounded-lg border transition-all ${usdAmount === amt && !customUsd ? 'bg-[#F5A623] border-[#F5A623] text-black' : 'bg-[#1C2236] border-[#2A3352] text-[#EEF0F8] hover:border-[#5A6280]'}`}>
@@ -127,7 +114,6 @@ export function TopUpModal({ onClose, email, userId, onSuccessRefresh }: TopUpMo
           ))}
         </div>
 
-        {/* Custom Input */}
         <div className="mb-5">
           <label className="block text-[11px] font-semibold text-[#8B92B0] uppercase tracking-wide mb-1.5">Custom Amount (USD)</label>
           <div className="relative">
@@ -136,7 +122,6 @@ export function TopUpModal({ onClose, email, userId, onSuccessRefresh }: TopUpMo
           </div>
         </div>
 
-        {/* Summary Block */}
         <div className="bg-[#1C2236] rounded-xl p-4 mb-6 border border-[#2A3352]">
           <div className="flex justify-between text-xs text-[#8B92B0] mb-1">
             <span>Exchange Rate</span>

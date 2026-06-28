@@ -1,55 +1,25 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Topbar } from '@/components/dashboard/Topbar'
+import { useSession } from '@/hooks/useSession'
+import { useWallet } from '@/hooks/useWallet'
 
 const TopUpModal = dynamic(
   () => import('@/components/wallet/TopUpModal').then((mod) => mod.TopUpModal),
   { ssr: false }
 )
 
-interface UserProfile {
-  id: string;
-  email: string;
-}
-
 export default function WalletPage() {
-  const [balance, setBalance] = useState<number>(0)
+  const { user, token, loading: sessionLoading } = useSession()
+  const { balance, transactions, loading: walletLoading, refresh } = useWallet(token)
   const [showTopUp, setShowTopUp] = useState<boolean>(false)
-  const [user, setUser] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState<boolean>(true)
-
-  const fetchWalletData = async () => {
-    try {
-      const userRes = await fetch('/api/auth/me') 
-      const userData = await userRes.json()
-      if (userData?.user) {
-        setUser(userData.user)
-      } else {
-        setUser({ id: '00000000-0000-0000-0000-000000000000', email: 'testuser@ringvault.com' })
-      }
-
-      const balanceRes = await fetch('/api/wallet/balance')
-      const balanceData = await balanceRes.json()
-      if (balanceData.success) {
-        setBalance(balanceData.balance)
-      }
-    } catch (err) {
-      console.error("Error connecting with API balances:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchWalletData()
-  }, [])
 
   const handleSignOut = () => {
     console.log("Signing out user...")
   }
 
-  if (loading) {
+  if (sessionLoading || walletLoading) {
     return (
       <div className="min-h-screen bg-[#0B0E17] text-white grid place-items-center px-4">
         <p className="text-sm font-semibold text-[#5A6280] animate-pulse">Syncing Wallet Balances...</p>
@@ -74,17 +44,36 @@ export default function WalletPage() {
           </h2>
         </div>
 
-        <div className="flex-1 min-h-[200px] border border-dashed border-[#2A3352] rounded-2xl p-12 text-center text-sm text-[#5A6280] flex items-center justify-center">
-          Transaction details and history items will be rendered below.
+        <div className="flex-1 min-h-[200px] border border-dashed border-[#2A3352] rounded-2xl p-4 sm:p-6">
+          {transactions.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-center text-sm text-[#5A6280]">
+              Transaction details and history items will be rendered below.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {transactions.map((t: any) => (
+                <div key={t.id} className="flex items-center justify-between border-b border-[#2A3352]/50 py-2 text-sm">
+                  <div>
+                    <p className="font-semibold">{t.description || (t.type === 'credit' ? 'Top up' : 'Charge')}</p>
+                    <p className="text-[11px] text-[#5A6280]">{new Date(t.created_at).toLocaleString()}</p>
+                  </div>
+                  <span className={t.type === 'credit' ? 'text-[#22C67A] font-bold' : 'text-red-400 font-bold'}>
+                    {t.type === 'credit' ? '+' : '-'}${Number(t.amount).toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 
       {showTopUp && user && (
         <TopUpModal
           onClose={() => setShowTopUp(false)}
-          email={user.email}
+          email={user.email || ''}
           userId={user.id}
-          onSuccessRefresh={fetchWalletData}
+          token={token}
+          onSuccessRefresh={refresh}
         />
       )}
     </div>

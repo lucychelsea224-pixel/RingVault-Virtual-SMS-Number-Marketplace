@@ -1,36 +1,32 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { getWalletBalance, getTransactions } from '@/lib/api'
 
 export function useWallet(token: string | null) {
   const [balance, setBalance] = useState<number>(0)
   const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState<boolean>(false)
 
-  const topUp = async (amount: number, email: string, userId: string): Promise<any> => {
+  const refresh = useCallback(async () => {
+    if (!token) return
     setLoading(true)
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/wallet/topup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ amount, email, userId }),
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to initiate top up')
-      }
-      
-      const data = await response.json()
-      return data
+      const [balanceData, txData] = await Promise.all([
+        getWalletBalance(token),
+        getTransactions(token).catch(() => ({ transactions: [] })),
+      ])
+      setBalance(balanceData?.balance ?? 0)
+      setTransactions(txData?.transactions ?? [])
     } catch (error) {
-      console.error(error)
-      throw error
+      console.error('Failed to fetch wallet data:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [token])
 
-  return { balance, transactions, loading, topUp }
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { balance, transactions, loading, refresh }
 }
