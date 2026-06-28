@@ -37,6 +37,10 @@ export default function BuyPage() {
   const [error, setError] = useState('')
 
   const [allocatedNumber, setAllocatedNumber] = useState<string | null>(null)
+  const [allocatedNumberId, setAllocatedNumberId] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [resending, setResending] = useState(false)
+  const [resendMsg, setResendMsg] = useState('')
   const [smsStatus, setSmsStatus] = useState('')
   const [otpCode, setOtpCode] = useState<string | null>(null)
   const [fullSms, setFullSms] = useState<string | null>(null)
@@ -90,8 +94,10 @@ export default function BuyPage() {
       const data = await response.json()
       if (data.success) {
         setAllocatedNumber(data.phone_number)
+        setAllocatedNumberId(data.number_id || null)
         setStep(3)
         if (orderType === 'short') {
+          setSessionId(data.session_id)
           startOtpPolling(data.session_id)
         } else {
           setSmsStatus('Long-term configuration complete. Persistent monitoring active inside your dashboard container.')
@@ -102,9 +108,35 @@ export default function BuyPage() {
     } catch (e: any) { setError(e.message) } finally { setLoading(false) }
   }
 
+  const handleResendCode = async () => {
+    if (!allocatedNumberId) return
+    setResending(true)
+    setResendMsg('')
+    try {
+      const res = await fetch('https://ringvault-api.onrender.com/api/resend-code', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number_id: allocatedNumberId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setOtpCode(null)
+        setFullSms(null)
+        setSmsStatus('Resend requested — listening for the new code...')
+        const idToUse = data.session_id || sessionId
+        if (idToUse) startOtpPolling(idToUse)
+      } else {
+        setResendMsg(data.error || 'Resend request failed.')
+      }
+    } catch (e: any) {
+      setResendMsg('Could not reach the server to request a resend.')
+    } finally {
+      setResending(false)
+    }
+  }
+
   return (
     <div className="w-full max-w-2xl mx-auto animate-[fadeSlide_0.3s_ease] px-2 sm:px-4">
-      {/* ORDER TYPE SELECTOR */}
       {step < 3 && (
         <div className="flex bg-[#1C2236] p-1 rounded-xl mb-4 border border-[#2A3352]">
           <button onClick={() => { setOrderType('short'); setStep(1); }}
@@ -125,7 +157,6 @@ export default function BuyPage() {
       <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-4 sm:p-7">
         {error && <div className="mb-4 p-3 rounded-xl bg-[rgba(247,91,91,0.1)] border border-[rgba(247,91,91,0.3)] text-[#F75B5B] text-[13px]">{error}</div>}
 
-        {/* Step 1: Short Term Country Grid */}
         {step === 1 && orderType === 'short' && (
           <>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
@@ -141,7 +172,6 @@ export default function BuyPage() {
           </>
         )}
 
-        {/* Step 2: Configuration View Panel */}
         {step === 2 && (
           <>
             <h2 className="font-head text-[17px] font-bold mb-1">
@@ -170,7 +200,6 @@ export default function BuyPage() {
               )}
             </div>
 
-            {/* 🌟 USER NOTICE: Dynamic Live Pricing Notification Subtext */}
             <div className="bg-[rgba(245,166,35,0.05)] border border-[rgba(245,166,35,0.15)] rounded-xl p-3 mb-6 text-left">
               <p className="text-[12px] text-[#E0961B] leading-relaxed">
                 ℹ️ <strong>Live Pricing Active:</strong> Final rates are fetched from live networks right now. RingVault applies a flat base markup of <strong>$1.50</strong> on top of wholesale cost metrics to guarantee premium, high-success lines.
@@ -186,7 +215,6 @@ export default function BuyPage() {
           </>
         )}
 
-        {/* Step 3: Terminal Feed Screen */}
         {step === 3 && (
           <>
             <h2 className="font-head text-[17px] font-bold mb-1">Virtual Line Terminal</h2>
@@ -210,6 +238,17 @@ export default function BuyPage() {
                 <div className="bg-[rgba(39,174,96,0.1)] border border-[rgba(39,174,96,0.3)] rounded-xl p-5 animate-[fadeSlide_0.3s_ease]">
                   <div className="text-center font-mono text-4xl font-extrabold text-[#27AE60] tracking-widest my-2 select-all">{otpCode}</div>
                   {fullSms && <p className="mt-2 text-xs text-[#8B92B0] text-center italic">"{fullSms}"</p>}
+                </div>
+              )}
+
+              {allocatedNumberId && (
+                <div className="mt-4">
+                  {resendMsg && (
+                    <p className="text-xs text-[#F75B5B] mb-2">{resendMsg}</p>
+                  )}
+                  <Button variant="ghost" className="w-full" onClick={handleResendCode} disabled={resending}>
+                    {resending ? 'Requesting resend…' : '↻ Didn\'t get a code? Request a resend ($0.75 fee)'}
+                  </Button>
                 </div>
               )}
             </div>

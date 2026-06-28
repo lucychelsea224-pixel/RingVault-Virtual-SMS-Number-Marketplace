@@ -45,6 +45,12 @@ export const releaseNumber = (token: string, phone_number: string) =>
     body: JSON.stringify({ phone_number }) 
   });
 
+export const resendCode = (token: string, number_id: string) =>
+  authFetch('/api/resend-code', token, {
+    method: 'POST',
+    body: JSON.stringify({ number_id }),
+  });
+
 // --- WALLET FUNCTIONS ---
 export const getWalletBalance = (token: string) => 
   authFetch('/api/wallet/balance', token);
@@ -54,6 +60,18 @@ export const getTransactions = (token: string) =>
 
 export const getExchangeRate = (token: string, currency: string) =>
   authFetch(`/api/wallet/get-rate/${currency}`, token);
+
+export const initTopup = (token: string, reference: string, usd_amount: number) =>
+  authFetch('/api/wallet/init-topup', token, {
+    method: 'POST',
+    body: JSON.stringify({ reference, usd_amount }),
+  });
+
+export const cancelTopup = (token: string, reference: string) =>
+  authFetch('/api/wallet/cancel-topup', token, {
+    method: 'POST',
+    body: JSON.stringify({ reference }),
+  });
 
 export const verifyPayment = (token: string, reference: string) => 
   authFetch('/api/wallet/verify-payment', token, {

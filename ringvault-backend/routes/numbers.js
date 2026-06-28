@@ -79,12 +79,14 @@ router.post('/buy-number', async (req, res) => {
 
       if (response.data.success !== 1 && response.data.success !== true) throw new Error();
 
-      await supabaseAdmin.from("user_numbers").insert({
+      const { data: insertedRow, error: insertErr } = await supabaseAdmin.from("user_numbers").insert({
         user_id: user.id, phone_number: response.data.number, telnyx_number_id: response.data.order_id.toString(),
         country_code: state_code || "1", status: "active", expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
-      });
+      }).select().single();
 
-      return res.status(200).json({ success: true, phone_number: response.data.number, session_id: response.data.order_id });
+      if (insertErr) throw insertErr;
+
+      return res.status(200).json({ success: true, phone_number: response.data.number, session_id: response.data.order_id, number_id: insertedRow.id });
     } catch (apiError) {
       await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: RETAIL_PRICE });
       return res.status(502).json({ success: false, error: "Carrier pool dry. Wallet auto-refunded." });
@@ -124,18 +126,84 @@ router.post('/rent-number', async (req, res) => {
 
       if (!response.data.success) throw new Error();
 
-      await supabaseAdmin.from("user_numbers").insert({
+      const { data: insertedRow, error: insertErr } = await supabaseAdmin.from("user_numbers").insert({
         user_id: user.id, phone_number: response.data.number, telnyx_number_id: response.data.rental_id.toString(),
         country_code: state_code || "1", status: "rental_active", expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
-      });
+      }).select().single();
 
-      return res.status(200).json({ success: true, phone_number: response.data.number });
+      if (insertErr) throw insertErr;
+
+      return res.status(200).json({ success: true, phone_number: response.data.number, number_id: insertedRow.id });
     } catch (err) {
       await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: TOTAL_RENTAL_RETAIL });
       return res.status(502).json({ success: false, error: "Rental pool failure. Wallet auto-refunded." });
     }
   } catch (err) {
     return res.status(500).json({ success: false, error: "System error." });
+  }
+});
+
+// =========================================================================
+// ENDPOINT: RESEND CODE — charges a small fee and asks SMSPool to resend
+// an SMS to a number the user already owns. Refunds automatically if the
+// upstream request fails.
+// =========================================================================
+router.post('/resend-code', async (req, res) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ success: false, error: "Unauthorized access" });
+
+    const { number_id } = req.body;
+    if (!number_id) return res.status(400).json({ success: false, error: "number_id is required." });
+
+    const { data: numberRow, error: numErr } = await supabaseAdmin
+      .from('user_numbers')
+      .select('*')
+      .eq('id', number_id)
+      .eq('user_id', user.id)
+      .single();
+
+    if (numErr || !numberRow) {
+      return res.status(404).json({ success: false, error: "Number not found on your account." });
+    }
+    if (!['active', 'rental_active'].includes(numberRow.status)) {
+      return res.status(400).json({ success: false, error: "This number is no longer active, so a resend can't be requested." });
+    }
+
+    const RESEND_FEE = 0.75; // flat fee — adjust to match your real SMSPool resend cost
+
+    // 🛑 Charge the resend fee atomically before contacting SMSPool
+    const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
+      p_user_id: user.id,
+      p_amount: RESEND_FEE,
+      p_description: `Resend code for ${numberRow.phone_number}`
+    });
+
+    if (balanceError || !balanceCheck || balanceCheck.ok === false) {
+      return res.status(402).json({ success: false, error: "Insufficient RingVault wallet balance to request a resend." });
+    }
+
+    try {
+      const response = await axios.post(
+        'https://api.smspool.net/sms/resend',
+        createFormData({ key: process.env.SMSPOOL_API_KEY, orderid: numberRow.telnyx_number_id }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+
+      if (response.data.success !== 1 && response.data.success !== true) throw new Error();
+
+      return res.status(200).json({
+        success: true,
+        session_id: numberRow.telnyx_number_id,
+        message: "Resend requested — watch your inbox for the new code."
+      });
+    } catch (apiError) {
+      // Upstream resend failed — refund the fee
+      await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: RESEND_FEE });
+      return res.status(502).json({ success: false, error: "Resend request failed upstream. Wallet auto-refunded." });
+    }
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal resend error." });
   }
 });
 

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { usePaystackPayment } from 'react-paystack'
-import { getExchangeRate, verifyPayment } from '@/lib/api'
+import { getExchangeRate, verifyPayment, initTopup, cancelTopup } from '@/lib/api'
 
 const AMOUNTS = [5, 10, 20, 50, 100, 200]
 const CURRENCIES = [
@@ -65,10 +65,20 @@ export function TopUpModal({ onClose, email, userId, token, onSuccessRefresh }: 
 
   const initializePayment = usePaystackPayment(config)
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (!usdAmount || usdAmount < 1) return
 
     setError('')
+
+    // Record this top-up as "pending" BEFORE opening the Paystack popup, so
+    // it shows up in transaction history even if the user abandons payment.
+    try {
+      await initTopup(token, config.reference, usdAmount)
+    } catch (err: any) {
+      setError(err?.message || 'Could not start top-up. Please try again.')
+      return
+    }
+
     // @ts-ignore
     initializePayment({
       onSuccess: async (response: any) => {
@@ -85,7 +95,10 @@ export function TopUpModal({ onClose, email, userId, token, onSuccessRefresh }: 
         }
       },
       onClose: () => {
-        console.log("Payment wrapper integration window dismissed.")
+        // User dismissed the popup without paying — mark the pending
+        // transaction as failed so it doesn't sit there looking unresolved.
+        cancelTopup(token, config.reference).catch(() => {})
+        onSuccessRefresh()
       }
     })
   }

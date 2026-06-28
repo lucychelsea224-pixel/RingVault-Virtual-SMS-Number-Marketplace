@@ -7,18 +7,20 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { SMSItem } from '@/components/inbox/SMSItem'
-import { getMyNumbers, releaseNumber } from '@/lib/api'
+import { getMyNumbers, releaseNumber, resendCode } from '@/lib/api'
 import Link from 'next/link'
 
 export const runtime = 'edge'
 
 export default function DashboardPage() {
   const { user, token } = useSession()
-  const { balance, transactions } = useWallet(token)
+  const { balance, transactions, refresh: refreshWallet } = useWallet(token)
   const { messages, isConnected } = useRealtimeSMS(user?.id)
   const [numbers, setNumbers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
+  const [resendingId, setResendingId] = useState<string | null>(null)
+  const [resendError, setResendError] = useState('')
 
   useEffect(() => {
     setMounted(true)
@@ -48,6 +50,19 @@ export default function DashboardPage() {
     }
   }
 
+  const handleResend = async (numberId: string) => {
+    setResendError('')
+    setResendingId(numberId)
+    try {
+      await resendCode(token, numberId)
+      await refreshWallet() // resend fee was charged, reflect new balance immediately
+    } catch (err: any) {
+      setResendError(err?.message || 'Failed to request a resend.')
+    } finally {
+      setResendingId(null)
+    }
+  }
+
   return (
     <div className="animate-[fadeSlide_0.3s_ease] px-2 sm:px-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -67,6 +82,12 @@ export default function DashboardPage() {
             </div>
             <Link href="/dashboard/buy"><Button variant="accent" size="sm">+ Buy</Button></Link>
           </div>
+
+          {resendError && (
+            <div className="mb-3 p-2.5 rounded-lg bg-[rgba(247,91,91,0.1)] border border-[rgba(247,91,91,0.3)] text-[#F75B5B] text-[12px]">
+              {resendError}
+            </div>
+          )}
           
           {loading ? (
             <div className="flex justify-center py-10 text-xs text-[#5A6280] tracking-wide animate-pulse">
@@ -110,9 +131,21 @@ export default function DashboardPage() {
                           </Badge>
                         </td>
                         <td className="py-3 text-right">
-                          <Button variant="danger" size="sm" onClick={() => handleRelease(n.id || n.telnyx_number_id)}>
-                            Release
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            {isLineLive && (
+                              <Button
+                                variant="accent"
+                                size="sm"
+                                disabled={resendingId === n.id}
+                                onClick={() => handleResend(n.id)}
+                              >
+                                {resendingId === n.id ? 'Requesting…' : '↻ Resend'}
+                              </Button>
+                            )}
+                            <Button variant="danger" size="sm" onClick={() => handleRelease(n.id || n.telnyx_number_id)}>
+                              Release
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
