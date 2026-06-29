@@ -13,23 +13,14 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    try {
-      const supabase = createClient()
-      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
-      if (err) {
-        setError(err.message)
-        setLoading(false)
-        return
-      }
-      if (data?.session) {
-        setTimeout(() => {
-          window.location.replace('/dashboard')
-        }, 500)
-      }
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong')
+    const supabase = createClient()
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+    if (err) {
+      setError(err.message)
       setLoading(false)
+      return
     }
+    window.location.replace('/dashboard')
   }
 
   return (
