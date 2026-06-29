@@ -8,12 +8,14 @@ export default function SignupPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!agreed) { setError('You must agree to the Terms & Conditions and Privacy Policy.'); return }
     setError('')
     setLoading(true)
     try {
@@ -22,13 +24,9 @@ export default function SignupPage() {
         password,
         options: { data: { full_name: name } },
       })
-      if (err) {
-        setError(err.message)
-        setLoading(false)
-        return
-      }
+      if (err) { setError(err.message); setLoading(false); return }
       setSuccess(true)
-      window.location.href = '/dashboard'
+      window.location.replace('/dashboard')
     } catch (err: any) {
       setError(err.message || 'Something went wrong')
       setLoading(false)
@@ -56,12 +54,22 @@ export default function SignupPage() {
             <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
               className="w-full bg-[#1C2236] border border-[#2A3352] rounded-lg px-4 py-2.5 text-[14px] text-[#EEF0F8] outline-none focus:border-[#F5A623] transition-colors" />
           </div>
-          <div className="mb-6">
+          <div className="mb-5">
             <label className="block text-[11px] font-semibold text-[#8B92B0] uppercase tracking-wide mb-1.5">Password</label>
             <input type="password" required value={password} onChange={e => setPassword(e.target.value)}
               className="w-full bg-[#1C2236] border border-[#2A3352] rounded-lg px-4 py-2.5 text-[14px] text-[#EEF0F8] outline-none focus:border-[#F5A623] transition-colors" />
           </div>
-          <button type="submit" disabled={loading}
+          <label className="flex items-start gap-3 mb-6 cursor-pointer">
+            <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}
+              className="mt-0.5 accent-[#F5A623] w-4 h-4 shrink-0" />
+            <span className="text-[12px] text-[#8B92B0] leading-relaxed">
+              I agree to RingVault's{' '}
+              <Link href="/terms" target="_blank" className="text-[#F5A623] hover:underline">Terms & Conditions</Link>
+              {' '}and{' '}
+              <Link href="/privacy" target="_blank" className="text-[#F5A623] hover:underline">Privacy Policy</Link>
+            </span>
+          </label>
+          <button type="submit" disabled={loading || !agreed}
             className="w-full bg-[#F5A623] hover:bg-[#E8891A] disabled:opacity-50 text-black font-head font-bold text-[15px] py-3 rounded-xl transition-all">
             {loading ? 'Creating account...' : 'Create Account'}
           </button>

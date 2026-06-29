@@ -27,7 +27,7 @@ export default function HomePage() {
           Buy or rent real virtual phone numbers from the USA and worldwide. Receive OTP codes instantly for any app.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 items-center">
-          <Link href="/auth/signup" className="px-8 py-3.5 bg-[#F5A623] hover:bg-[#E8891A] text-black font-head font-bold text-base rounded-xl transition-all shadow-lg shadow-[#F5A623]/20">Start for Free →</Link>
+          <Link href="/auth/signup" className="px-8 py-3.5 bg-[#F5A623] hover:bg-[#E8891A] text-black font-head font-bold text-base rounded-xl transition-all">Start for Free →</Link>
           <Link href="/auth/login" className="px-8 py-3.5 bg-[#1C2236] hover:bg-[#242B42] border border-[#2A3352] text-white font-semibold text-base rounded-xl transition-all">Sign In</Link>
         </div>
       </section>
@@ -65,8 +65,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="border-t border-[#2A3352] px-6 py-6 text-center text-[12px] text-[#5A6280]">
-        © {new Date().getFullYear()} RingVault. All rights reserved.
+      <footer className="border-t border-[#2A3352] px-6 py-8 text-center text-[12px] text-[#5A6280]">
+        <div className="flex justify-center gap-6 mb-3">
+          <Link href="/terms" className="hover:text-white transition-colors">Terms & Conditions</Link>
+          <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+          <a href="mailto:support@ringvault.io" className="hover:text-white transition-colors">Contact Us</a>
+        </div>
+        2026 RingVault. All rights reserved.
       </footer>
     </div>
   )
