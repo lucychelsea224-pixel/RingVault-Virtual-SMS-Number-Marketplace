@@ -1,12 +1,9 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
-  const router = useRouter()
-  const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -17,14 +14,18 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+      const supabase = createClient()
+      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
       if (err) {
         setError(err.message)
         setLoading(false)
         return
       }
-      router.refresh()
-      window.location.href = '/dashboard'
+      if (data?.session) {
+        setTimeout(() => {
+          window.location.replace('/dashboard')
+        }, 500)
+      }
     } catch (err: any) {
       setError(err.message || 'Something went wrong')
       setLoading(false)
@@ -40,7 +41,9 @@ export default function LoginPage() {
           <p className="text-[#8B92B0] text-sm mt-1">Sign in to your account</p>
         </div>
         <form onSubmit={handleLogin} className="bg-[#131826] border border-[#2A3352] rounded-2xl p-7">
-          {error && <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-[13px]">{error}</div>}
+          {error && (
+            <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-[13px]">{error}</div>
+          )}
           <div className="mb-4">
             <label className="block text-[11px] font-semibold text-[#8B92B0] uppercase tracking-wide mb-1.5">Email</label>
             <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
