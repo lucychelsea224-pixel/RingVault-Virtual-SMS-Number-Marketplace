@@ -27,18 +27,26 @@ export default function DashboardPage() {
     setLoading(true)
     getMyNumbers(token)
       .then(d => setNumbers(d?.numbers || d || []))
+<<<<<<< HEAD
       .catch(err => console.error("Failed to load numbers:", err))
+=======
+      .catch(err => console.error('Failed to load numbers:', err))
+>>>>>>> e0c5b1a (fix: TS error resendMsg null, home page, login, signup)
       .finally(() => setLoading(false))
   }, [token])
 
-  const totalSpent = transactions?.filter(t => t.type === 'debit').reduce((a: number, t: any) => a + t.amount, 0) || 0
+  const totalSpent = transactions?.filter((t: any) => t.type === 'debit').reduce((a: number, t: any) => a + t.amount, 0) || 0
 
   const handleRelease = async (id: string) => {
     try {
       await releaseNumber(token, id)
       setNumbers(prev => prev.filter(n => n.id !== id))
     } catch (err) {
+<<<<<<< HEAD
       console.error("Failed to release number:", err)
+=======
+      console.error('Failed to release number:', err)
+>>>>>>> e0c5b1a (fix: TS error resendMsg null, home page, login, signup)
     }
   }
 
@@ -66,7 +74,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* My Numbers Block */}
         <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-4 sm:p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -77,9 +84,13 @@ export default function DashboardPage() {
           </div>
 
           {loading ? (
+<<<<<<< HEAD
             <div className="flex justify-center py-10 text-xs text-[#5A6280] animate-pulse">
               Syncing numbers...
             </div>
+=======
+            <div className="flex justify-center py-10 text-xs text-[#5A6280] animate-pulse">Syncing numbers...</div>
+>>>>>>> e0c5b1a (fix: TS error resendMsg null, home page, login, signup)
           ) : numbers.length === 0 ? (
             <div className="flex flex-col items-center py-10 text-[#5A6280]">
               <span className="text-4xl mb-3 opacity-60">📵</span>
@@ -94,6 +105,10 @@ export default function DashboardPage() {
                   ? `Expires ${new Date(n.expires_at).toLocaleDateString()}`
                   : 'One-time Session'
                 const rowId = n.id || n.telnyx_number_id
+<<<<<<< HEAD
+=======
+                const currentResend = resendMsg?.id === rowId ? resendMsg : null
+>>>>>>> e0c5b1a (fix: TS error resendMsg null, home page, login, signup)
 
                 return (
                   <div key={rowId} className="bg-[#1C2236] border border-[#2A3352] rounded-xl p-3">
@@ -108,6 +123,7 @@ export default function DashboardPage() {
                       </Badge>
                     </div>
 
+<<<<<<< HEAD
                     {/* Resend feedback message */}
                     {resendMsg?.id === rowId && (
                       <div className={`text-[11px] px-2 py-1 rounded-lg mb-2 ${resendMsg.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -116,6 +132,14 @@ export default function DashboardPage() {
                     )}
 
                     {/* Action buttons */}
+=======
+                    {currentResend !== null && (
+                      <div className={`text-[11px] px-2 py-1 rounded-lg mb-2 ${currentResend.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                        {currentResend.msg}
+                      </div>
+                    )}
+
+>>>>>>> e0c5b1a (fix: TS error resendMsg null, home page, login, signup)
                     <div className="flex gap-2 mt-1">
                       {isLineLive && (
                         <button
@@ -140,7 +164,6 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Recent SMS Block */}
         <div className="bg-[#131826] border border-[#2A3352] rounded-2xl p-4 sm:p-5">
           <div className="flex items-center justify-between mb-4 gap-2">
             <div>
