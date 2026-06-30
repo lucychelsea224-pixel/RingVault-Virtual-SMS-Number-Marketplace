@@ -85,6 +85,7 @@ router.post('/buy-number', async (req, res) => {
         country_code: state_code || "1",
         status: "active",
         amount_paid: RETAIL_PRICE,
+        service_name: sanitizedService,
         expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
       }).select().single();
 
@@ -141,6 +142,7 @@ router.post('/rent-number', async (req, res) => {
         country_code: state_code || "1",
         status: "rental_active",
         amount_paid: TOTAL_RENTAL_RETAIL,
+        service_name: service_name.toLowerCase(),
         expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
       }).select().single();
 
@@ -285,6 +287,12 @@ router.post('/request-refund', async (req, res) => {
   }
 });
 
+// =========================================================================
+// GET /api/check-otp/:session_id
+// FIX: was inserting into "messages" table, but the inbox + realtime hook
+// both read from "sms_logs" — they're different tables, so nothing ever
+// showed up once you left the buy page. Now writes to sms_logs correctly.
+// =========================================================================
 router.get('/check-otp/:session_id', async (req, res) => {
   try {
     const { session_id } = req.params;
@@ -305,14 +313,26 @@ router.get('/check-otp/:session_id', async (req, res) => {
         .eq("telnyx_number_id", session_id.toString())
         .select();
 
-      if (updatedNumbers?.[0]) {
-        await supabaseAdmin.from("messages").insert({
-          user_id: updatedNumbers[0].user_id,
-          sender: "Verification OTP",
-          phone_number: updatedNumbers[0].phone_number,
-          text: rawMessageBody,
-          code: extractedCode
+      const numberRow = updatedNumbers?.[0];
+
+      if (numberRow) {
+        // Idempotent: telnyx_message_id is UNIQUE, so a repeated poll
+        // (which can happen since this is called every 4s) won't duplicate the row.
+        const { error: logError } = await supabaseAdmin.from("sms_logs").insert({
+          telnyx_message_id: `otp_${session_id}`,
+          user_id: numberRow.user_id,
+          user_number_id: numberRow.id,
+          from_number: "Verification",
+          to_number: numberRow.phone_number,
+          body: rawMessageBody,
+          otp_code: extractedCode,
+          service_name: numberRow.service_name || null,
+          received_at: new Date().toISOString()
         });
+
+        if (logError && logError.code !== '23505') {
+          console.error('Failed to insert sms_log:', logError.message);
+        }
       }
     }
 
