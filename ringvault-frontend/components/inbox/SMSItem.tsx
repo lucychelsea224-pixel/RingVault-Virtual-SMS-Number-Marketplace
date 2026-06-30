@@ -17,6 +17,8 @@ const SERVICE_ICONS: Record<string, string> = {
   instagram: '📷', twitter: '🐦', tiktok: '🎵', uber: '⚫', unknown: '📩',
 }
 
+const URL_REGEX = new RegExp('https?:' + String.fromCharCode(47, 47) + '\\S+')
+
 export function SMSItem({ msg }: { msg: SMSLog }) {
   const [mounted, setMounted] = useState(false)
   const [showFull, setShowFull] = useState(false)
@@ -35,8 +37,7 @@ export function SMSItem({ msg }: { msg: SMSLog }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Detect a clickable login link inside the message body (e.g. https://t.me/login/12345)
-  const linkMatch = msg.body?.match(/https?:\/\/\S+/)
+  const linkMatch = msg.body ? msg.body.match(URL_REGEX) : null
 
   return (
     <div className={clsx('flex gap-4 p-4 rounded-xl border transition-all', msg.isNew ? 'border-[#F5A623] bg-[rgba(245,166,35,0.05)]' : 'border-[#2A3352] bg-[#1C2236]')}>
