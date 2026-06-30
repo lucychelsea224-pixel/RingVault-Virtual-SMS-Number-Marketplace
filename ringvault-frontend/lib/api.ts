@@ -1,4 +1,3 @@
-// lib/api.ts
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 async function authFetch(path: string, token: string, opts: RequestInit = {}) {
@@ -29,7 +28,6 @@ async function authFetch(path: string, token: string, opts: RequestInit = {}) {
   return data;
 }
 
-// --- NUMBER FUNCTIONS ---
 export const searchNumbers = (token: string, params: any) =>
   authFetch(`/api/search-numbers?${new URLSearchParams(params).toString()}`, token);
 
@@ -51,7 +49,12 @@ export const resendCode = (token: string, number_id: string) =>
     body: JSON.stringify({ number_id }),
   });
 
-// --- WALLET FUNCTIONS ---
+export const requestRefund = (token: string, number_id: string) =>
+  authFetch('/api/request-refund', token, {
+    method: 'POST',
+    body: JSON.stringify({ number_id }),
+  });
+
 export const getWalletBalance = (token: string) =>
   authFetch('/api/wallet/balance', token);
 

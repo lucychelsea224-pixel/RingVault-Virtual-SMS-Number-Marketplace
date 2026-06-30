@@ -1,6 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import { supabaseAdmin, getUser } from '../lib/supabase.js';
+import { getSmsPoolCountryMap } from '../lib/smspool-countries.js';
 
 const router = express.Router();
 
@@ -14,9 +15,18 @@ const createFormData = (data) => {
   return params;
 };
 
-// =========================================================================
-// ENDPOINT 1: FETCH NUMBERS HISTORY (SHORT-TERM & LONG-TERM RENTALS)
-// =========================================================================
+async function resolveCountryId(stateCode) {
+  if (!stateCode || stateCode === 'virtual') return '1';
+  try {
+    const map = await getSmsPoolCountryMap();
+    const cleanDialCode = stateCode.toString().replace('+', '').trim();
+    return map[cleanDialCode] || '1';
+  } catch (err) {
+    console.error('Failed to resolve SMSPool country map, defaulting to US:', err.message);
+    return '1';
+  }
+}
+
 router.get('/my-numbers', async (req, res) => {
   try {
     const user = await getUser(req);
@@ -26,7 +36,7 @@ router.get('/my-numbers', async (req, res) => {
       .from('user_numbers')
       .select('*')
       .eq('user_id', user.id)
-      .in('status', ['active', 'rental_active', 'completed', 'pending', 'expired'])
+      .in('status', ['active', 'rental_active', 'completed', 'pending', 'expired', 'refunded'])
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -36,30 +46,19 @@ router.get('/my-numbers', async (req, res) => {
   }
 });
 
-// =========================================================================
-// ENDPOINT 2: SHORT-TERM ACTIVATIONS (SECURED BALANCE GATEKEEPER)
-// =========================================================================
 router.post('/buy-number', async (req, res) => {
   try {
     const user = await getUser(req);
     if (!user) return res.status(401).json({ success: false, error: "Unauthorized access" });
 
-    const { service_name, state_code } = req.body; 
+    const { service_name, state_code } = req.body;
     if (!service_name) return res.status(400).json({ success: false, error: "Service name required." });
 
     const sanitizedService = service_name.toLowerCase();
-    let targetCountryId = '1'; 
-    let baseVendorCost = 0.50; 
-
-    if (state_code) {
-      const dialMap = { "1": "1", "44": "2", "31": "3", "49": "8", "33": "17", "91": "22", "57": "50" };
-      const cleanDialCode = state_code.toString().replace('+', '').trim();
-      if (dialMap[cleanDialCode]) targetCountryId = dialMap[cleanDialCode];
-    }
-
+    const targetCountryId = await resolveCountryId(state_code);
+    const baseVendorCost = 0.50;
     const RETAIL_PRICE = baseVendorCost + 1.50;
 
-    // 🛑 HARD STOP: Atomically deduct balance before reaching SMSPool
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
       p_user_id: user.id,
       p_amount: RETAIL_PRICE,
@@ -72,19 +71,31 @@ router.post('/buy-number', async (req, res) => {
 
     try {
       const response = await axios.post(
-        'https://api.smspool.net/purchase/sms', 
+        'https://api.smspool.net/purchase/sms',
         createFormData({ key: process.env.SMSPOOL_API_KEY, country: targetCountryId, service: sanitizedService, pricing_option: '1' }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      if (response.data.success !== 1 && response.data.success !== true) throw new Error();
+      if (response.data.success !== 1 && response.data.success !== true) throw new Error("SMSPool rejected the request");
 
-      await supabaseAdmin.from("user_numbers").insert({
-        user_id: user.id, phone_number: response.data.number, telnyx_number_id: response.data.order_id.toString(),
-        country_code: state_code || "1", status: "active", expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      const { data: insertedRow, error: insertErr } = await supabaseAdmin.from("user_numbers").insert({
+        user_id: user.id,
+        phone_number: response.data.number,
+        telnyx_number_id: response.data.order_id.toString(),
+        country_code: state_code || "1",
+        status: "active",
+        amount_paid: RETAIL_PRICE,
+        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+      }).select().single();
+
+      if (insertErr) throw insertErr;
+
+      return res.status(200).json({
+        success: true,
+        phone_number: response.data.number,
+        session_id: response.data.order_id,
+        number_id: insertedRow.id
       });
-
-      return res.status(200).json({ success: true, phone_number: response.data.number, session_id: response.data.order_id });
     } catch (apiError) {
       await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: RETAIL_PRICE });
       return res.status(502).json({ success: false, error: "Carrier pool dry. Wallet auto-refunded." });
@@ -94,9 +105,6 @@ router.post('/buy-number', async (req, res) => {
   }
 });
 
-// =========================================================================
-// ENDPOINT 3: LONG-TERM RENTALS (SECURED BALANCE GATEKEEPER)
-// =========================================================================
 router.post('/rent-number', async (req, res) => {
   try {
     const user = await getUser(req);
@@ -104,11 +112,13 @@ router.post('/rent-number', async (req, res) => {
 
     const { service_name, duration_days, state_code } = req.body;
     const days = parseInt(duration_days) || 1;
-    const TOTAL_RENTAL_RETAIL = 4.00; // Base rate + profit margin
+    const TOTAL_RENTAL_RETAIL = 4.00;
+    const targetCountryId = await resolveCountryId(state_code);
 
-    // 🛑 HARD STOP: Atomically deduct balance before reaching SMSPool
     const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
-      p_user_id: user.id, p_amount: TOTAL_RENTAL_RETAIL, p_description: `Rental ${service_name}`
+      p_user_id: user.id,
+      p_amount: TOTAL_RENTAL_RETAIL,
+      p_description: `Rental ${service_name}`
     });
 
     if (balanceError || !balanceCheck || balanceCheck.ok === false) {
@@ -118,18 +128,29 @@ router.post('/rent-number', async (req, res) => {
     try {
       const response = await axios.post(
         'https://api.smspool.net/purchase/rental',
-        createFormData({ key: process.env.SMSPOOL_API_KEY, service: service_name.toLowerCase(), duration: days, country: '1' }),
+        createFormData({ key: process.env.SMSPOOL_API_KEY, service: service_name.toLowerCase(), duration: days, country: targetCountryId }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
 
-      if (!response.data.success) throw new Error();
+      if (!response.data.success) throw new Error("SMSPool rental rejected");
 
-      await supabaseAdmin.from("user_numbers").insert({
-        user_id: user.id, phone_number: response.data.number, telnyx_number_id: response.data.rental_id.toString(),
-        country_code: state_code || "1", status: "rental_active", expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+      const { data: insertedRow, error: insertErr } = await supabaseAdmin.from("user_numbers").insert({
+        user_id: user.id,
+        phone_number: response.data.number,
+        telnyx_number_id: response.data.rental_id.toString(),
+        country_code: state_code || "1",
+        status: "rental_active",
+        amount_paid: TOTAL_RENTAL_RETAIL,
+        expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+      }).select().single();
+
+      if (insertErr) throw insertErr;
+
+      return res.status(200).json({
+        success: true,
+        phone_number: response.data.number,
+        number_id: insertedRow.id
       });
-
-      return res.status(200).json({ success: true, phone_number: response.data.number });
     } catch (err) {
       await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: TOTAL_RENTAL_RETAIL });
       return res.status(502).json({ success: false, error: "Rental pool failure. Wallet auto-refunded." });
@@ -139,14 +160,136 @@ router.post('/rent-number', async (req, res) => {
   }
 });
 
-// =========================================================================
-// ENDPOINT 4: POLLING SYNC & REALTIME SMS NOTIFICATION GENERATION
-// =========================================================================
+router.post('/resend-code', async (req, res) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ success: false, error: "Unauthorized access" });
+
+    const { number_id } = req.body;
+    if (!number_id) return res.status(400).json({ success: false, error: "number_id is required." });
+
+    const { data: numberRow, error: numErr } = await supabaseAdmin
+      .from('user_numbers')
+      .select('*')
+      .eq('id', number_id)
+      .eq('user_id', user.id)
+      .single();
+
+    if (numErr || !numberRow) {
+      return res.status(404).json({ success: false, error: "Number not found on your account." });
+    }
+    if (!['active', 'rental_active'].includes(numberRow.status)) {
+      return res.status(400).json({ success: false, error: "This number is no longer active, so a resend can't be requested." });
+    }
+
+    const RESEND_FEE = 0.75;
+
+    const { data: balanceCheck, error: balanceError } = await supabaseAdmin.rpc("deduct_balance", {
+      p_user_id: user.id,
+      p_amount: RESEND_FEE,
+      p_description: `Resend code for ${numberRow.phone_number}`
+    });
+
+    if (balanceError || !balanceCheck || balanceCheck.ok === false) {
+      return res.status(402).json({ success: false, error: "Insufficient RingVault wallet balance to request a resend." });
+    }
+
+    try {
+      const response = await axios.post(
+        'https://api.smspool.net/sms/resend',
+        createFormData({ key: process.env.SMSPOOL_API_KEY, orderid: numberRow.telnyx_number_id }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+
+      if (response.data.success !== 1 && response.data.success !== true) throw new Error();
+
+      return res.status(200).json({
+        success: true,
+        session_id: numberRow.telnyx_number_id,
+        message: "Resend requested — watch your inbox for the new code."
+      });
+    } catch (apiError) {
+      await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: RESEND_FEE });
+      return res.status(502).json({ success: false, error: "Resend request failed upstream. Wallet auto-refunded." });
+    }
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal resend error." });
+  }
+});
+
+router.post('/request-refund', async (req, res) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ success: false, error: "Unauthorized access" });
+
+    const { number_id } = req.body;
+    if (!number_id) return res.status(400).json({ success: false, error: "number_id is required." });
+
+    const { data: numberRow, error: numErr } = await supabaseAdmin
+      .from('user_numbers')
+      .select('*')
+      .eq('id', number_id)
+      .eq('user_id', user.id)
+      .single();
+
+    if (numErr || !numberRow) {
+      return res.status(404).json({ success: false, error: "Number not found on your account." });
+    }
+
+    if (numberRow.sms_code) {
+      return res.status(400).json({
+        success: false,
+        error: "This number already received its verification code, so it isn't eligible for a refund."
+      });
+    }
+
+    if (!['active', 'rental_active'].includes(numberRow.status)) {
+      return res.status(400).json({ success: false, error: "This number is no longer eligible for a refund." });
+    }
+
+    try {
+      const response = await axios.post(
+        'https://api.smspool.net/sms/cancel',
+        createFormData({ key: process.env.SMSPOOL_API_KEY, orderid: numberRow.telnyx_number_id }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+
+      const smspoolConfirmedRefund = response.data.success === 1 || response.data.success === true;
+
+      if (!smspoolConfirmedRefund) {
+        return res.status(400).json({
+          success: false,
+          error: response.data.message || "SMSPool declined the refund — the number may already be in use."
+        });
+      }
+
+      const refundAmount = numberRow.amount_paid || (numberRow.status === 'rental_active' ? 4.00 : 2.00);
+
+      await supabaseAdmin.rpc("credit_balance", { p_user_id: user.id, p_amount: refundAmount });
+
+      await supabaseAdmin
+        .from('user_numbers')
+        .update({ status: 'refunded' })
+        .eq('id', number_id);
+
+      return res.status(200).json({
+        success: true,
+        message: `Refunded $${refundAmount.toFixed(2)} to your wallet.`,
+        refunded_amount: refundAmount
+      });
+    } catch (apiError) {
+      return res.status(502).json({ success: false, error: "Could not reach SMSPool to process the refund. Try again shortly." });
+    }
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Internal refund error." });
+  }
+});
+
 router.get('/check-otp/:session_id', async (req, res) => {
   try {
     const { session_id } = req.params;
     const response = await axios.post(
-      'https://api.smspool.net/sms/check', 
+      'https://api.smspool.net/sms/check',
       createFormData({ key: process.env.SMSPOOL_API_KEY, orderid: session_id }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );

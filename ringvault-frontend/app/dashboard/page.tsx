@@ -7,7 +7,7 @@ import { StatCard } from '@/components/dashboard/StatCard'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { SMSItem } from '@/components/inbox/SMSItem'
-import { getMyNumbers, releaseNumber, resendCode } from '@/lib/api'
+import { getMyNumbers, releaseNumber, resendCode, requestRefund } from '@/lib/api'
 import Link from 'next/link'
 
 export default function DashboardPage() {
@@ -18,7 +18,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
   const [resendingId, setResendingId] = useState<string | null>(null)
-  const [resendMsg, setResendMsg] = useState<{ id: string; msg: string; ok: boolean } | null>(null)
+  const [refundingId, setRefundingId] = useState<string | null>(null)
+  const [actionMsg, setActionMsg] = useState<{ id: string; msg: string; ok: boolean } | null>(null)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -44,15 +45,30 @@ export default function DashboardPage() {
 
   const handleResend = async (numberId: string) => {
     setResendingId(numberId)
-    setResendMsg(null)
+    setActionMsg(null)
     try {
       await resendCode(token, numberId)
-      setResendMsg({ id: numberId, msg: 'Resend requested! New code coming shortly. ($0.75 charged)', ok: true })
+      setActionMsg({ id: numberId, msg: 'Resend requested! New code coming shortly. ($0.75 charged)', ok: true })
     } catch (err: any) {
-      setResendMsg({ id: numberId, msg: err?.message || 'Resend failed.', ok: false })
+      setActionMsg({ id: numberId, msg: err?.message || 'Resend failed.', ok: false })
     } finally {
       setResendingId(null)
-      setTimeout(() => setResendMsg(null), 5000)
+      setTimeout(() => setActionMsg(null), 6000)
+    }
+  }
+
+  const handleRefund = async (numberId: string) => {
+    setRefundingId(numberId)
+    setActionMsg(null)
+    try {
+      const res = await requestRefund(token, numberId)
+      setActionMsg({ id: numberId, msg: res.message || 'Refund processed successfully!', ok: true })
+      setNumbers(prev => prev.map(n => (n.id === numberId ? { ...n, status: 'refunded' } : n)))
+    } catch (err: any) {
+      setActionMsg({ id: numberId, msg: err?.message || 'Refund could not be processed — the code may have already been sent.', ok: false })
+    } finally {
+      setRefundingId(null)
+      setTimeout(() => setActionMsg(null), 6000)
     }
   }
 
@@ -87,11 +103,13 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-3">
               {numbers.map(n => {
                 const isLineLive = n.status === 'active' || n.status === 'rental_active'
+                const hasReceivedCode = !!n.sms_code
+                const canRefund = isLineLive && !hasReceivedCode
                 const expirationLabel = mounted && n.expires_at
                   ? `Expires ${new Date(n.expires_at).toLocaleDateString()}`
                   : 'One-time Session'
                 const rowId = n.id || n.telnyx_number_id
-                const currentResend = resendMsg?.id === rowId ? resendMsg : null
+                const currentMsg = actionMsg?.id === rowId ? actionMsg : null
 
                 return (
                   <div key={rowId} className="bg-[#1C2236] border border-[#2A3352] rounded-xl p-3">
@@ -106,28 +124,41 @@ export default function DashboardPage() {
                       </Badge>
                     </div>
 
-                    {currentResend !== null && (
-                      <div className={`text-[11px] px-2 py-1 rounded-lg mb-2 ${currentResend.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                        {currentResend.msg}
+                    {currentMsg !== null && (
+                      <div className={`text-[11px] px-2 py-1 rounded-lg mb-2 ${currentMsg.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                        {currentMsg.msg}
                       </div>
                     )}
 
-                    <div className="flex gap-2 mt-1">
+                    <div className="flex flex-wrap gap-2 mt-1">
                       {isLineLive && (
                         <button
                           onClick={() => handleResend(rowId)}
                           disabled={resendingId === rowId}
-                          className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg border border-[#F5A623]/40 text-[#F5A623] hover:bg-[#F5A623]/10 transition-all disabled:opacity-50"
+                          className="flex-1 min-w-[110px] py-1.5 text-[11px] font-semibold rounded-lg border border-[#F5A623]/40 text-[#F5A623] hover:bg-[#F5A623]/10 transition-all disabled:opacity-50"
                         >
-                          {resendingId === rowId ? 'Requesting...' : '🔄 Resend Code ($0.75)'}
+                          {resendingId === rowId ? 'Requesting...' : '🔄 Resend ($0.75)'}
                         </button>
                       )}
-                      <button
-                        onClick={() => handleRelease(rowId)}
-                        className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all"
-                      >
-                        ✕ Release
-                      </button>
+
+                      {canRefund && (
+                        <button
+                          onClick={() => handleRefund(rowId)}
+                          disabled={refundingId === rowId}
+                          className="flex-1 min-w-[110px] py-1.5 text-[11px] font-semibold rounded-lg border border-[#4F8EF7]/40 text-[#4F8EF7] hover:bg-[#4F8EF7]/10 transition-all disabled:opacity-50"
+                        >
+                          {refundingId === rowId ? 'Processing...' : '💰 Request Refund'}
+                        </button>
+                      )}
+
+                      {isLineLive && (
+                        <button
+                          onClick={() => handleRelease(rowId)}
+                          className="flex-1 min-w-[110px] py-1.5 text-[11px] font-semibold rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all"
+                        >
+                          ✕ Release
+                        </button>
+                      )}
                     </div>
                   </div>
                 )

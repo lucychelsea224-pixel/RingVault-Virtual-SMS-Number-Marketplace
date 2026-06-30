@@ -42,33 +42,22 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">3. Data Sharing</h2>
-            <p>We do not sell your personal data. We share data only with:</p>
-            <ul className="list-disc pl-5 mt-2 flex flex-col gap-1">
-              <li><strong className="text-white">SMSPool</strong> — our SMS number provider, receives the service name and country to allocate numbers</li>
-              <li><strong className="text-white">Paystack</strong> — our payment processor, handles all financial transactions</li>
-              <li><strong className="text-white">Supabase</strong> — our database and auth provider, stores your account and transaction data</li>
-            </ul>
-            <p className="mt-3">All third-party providers are bound by their own privacy policies and data protection obligations.</p>
-          </section>
-
-          <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">4. SMS Data</h2>
+            <h2 className="font-head font-bold text-white text-[17px] mb-3">3. SMS Data</h2>
             <p>SMS messages received on your virtual numbers are stored temporarily in your dashboard to allow you to view OTP codes. Messages are linked to your account and are not shared with any third parties. You may clear your message history at any time from your dashboard.</p>
           </section>
 
           <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">5. Data Security</h2>
+            <h2 className="font-head font-bold text-white text-[17px] mb-3">4. Data Security</h2>
             <p>We take data security seriously. Your data is stored using Supabase with row-level security enabled. Passwords are hashed and never stored in plain text. All API communication is encrypted via HTTPS. However, no system is 100% secure and we cannot guarantee absolute security.</p>
           </section>
 
           <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">6. Cookies</h2>
-            <p>RingVault uses cookies only for authentication purposes (Supabase session cookies). We do not use tracking or advertising cookies. You can disable cookies in your browser, but this may prevent you from signing in.</p>
+            <h2 className="font-head font-bold text-white text-[17px] mb-3">5. Cookies</h2>
+            <p>RingVault uses cookies only for authentication purposes. We do not use tracking or advertising cookies. You can disable cookies in your browser, but this may prevent you from signing in.</p>
           </section>
 
           <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">7. Your Rights</h2>
+            <h2 className="font-head font-bold text-white text-[17px] mb-3">6. Your Rights</h2>
             <p>You have the right to:</p>
             <ul className="list-disc pl-5 mt-2 flex flex-col gap-1">
               <li>Access the personal data we hold about you</li>
@@ -80,17 +69,17 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">8. Children's Privacy</h2>
+            <h2 className="font-head font-bold text-white text-[17px] mb-3">7. Children's Privacy</h2>
             <p>RingVault is not intended for users under the age of 18. We do not knowingly collect personal information from minors. If we become aware that a minor has created an account, we will delete it immediately.</p>
           </section>
 
           <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">9. Changes to This Policy</h2>
+            <h2 className="font-head font-bold text-white text-[17px] mb-3">8. Changes to This Policy</h2>
             <p>We may update this Privacy Policy from time to time. We will notify users of significant changes via email or a notice on the platform. Continued use of RingVault after changes constitutes acceptance of the updated policy.</p>
           </section>
 
           <section>
-            <h2 className="font-head font-bold text-white text-[17px] mb-3">10. Contact</h2>
+            <h2 className="font-head font-bold text-white text-[17px] mb-3">9. Contact</h2>
             <p>For privacy-related questions, contact us at <a href="mailto:support@ringvault.io" className="text-[#F5A623] hover:underline">support@ringvault.io</a></p>
           </section>
         </div>
